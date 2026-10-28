@@ -11,7 +11,7 @@
 
 - 修复 Remote 面板打开后刷新和关闭按钮有时无法点击的问题。
 
-感谢择梦舟（@dreamfarer-space）和李国宝（@liguobao）的贡献与发版整合工作。
+感谢择梦舟（@dreamfarer-space）的贡献。
 
 ## English
 
@@ -26,4 +26,4 @@
 
 - Fix Remote panel refresh and close actions being blocked after the panel opens.
 
-Thanks to 择梦舟 (@dreamfarer-space) and 李国宝 (@liguobao) for their contributions and release integration work.
+Thanks to 择梦舟 (@dreamfarer-space) for the contribution.
