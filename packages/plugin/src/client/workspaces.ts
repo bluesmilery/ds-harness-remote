@@ -479,6 +479,11 @@ export function createRemoteWorkspaceAction(React: ClientReact) {
       try {
         const nextStatus = await props.control<RemoteStatus>('status')
         setStatus(nextStatus)
+        if (nextStatus.controlUnavailable) {
+          setNeedsAuthorization(undefined)
+          setError(t('remoteControlUnavailable'))
+          return
+        }
         if (!nextStatus.available) {
           setDevices([])
           setNeedsAuthorization(false)

@@ -89242,7 +89242,7 @@ var HostPluginRuntime = class {
       ...error === void 0 ? {} : { error },
       ...authorization?.account === void 0 ? {} : { account: authorization.account },
       authorized: authorization !== void 0,
-      accountRequired: error === "ACCOUNT_AUTH_REQUIRED" || error === "AUTH_INVALID" || error === "TOKEN_EXPIRED" || error === "DEVICE_REVOKED",
+      accountRequired: error === "ACCOUNT_AUTH_REQUIRED" || error === "AUTH_REQUIRED" || error === "AUTH_INVALID" || error === "TOKEN_EXPIRED" || error === "DEVICE_REVOKED" || error === "DEVICE_OWNERSHIP_REQUIRED",
       connectedClients: this.listConnectedClients()
     };
   }
