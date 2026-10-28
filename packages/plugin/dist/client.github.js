@@ -4953,7 +4953,7 @@ Minimum version required to store current data is: ` + bestVersion + `.
               showGroupTitle: !0,
               candidates: async (_session, request) => {
                 if ((await control("settings.get").catch(() => {
-                }))?.config?.remoteTools?.enabled !== !0) return [];
+                }))?.config?.remoteTools?.enabled === !1) return [];
                 let devices = await control("devices").catch(() => []), query = request.query.trim().toLocaleLowerCase();
                 return devices.filter((device) => device.online && (query === "" || `${device.name} ${device.deviceId}`.toLocaleLowerCase().includes(query))).map((device) => (hostCache.set(device.name, device), {
                   name: device.name,

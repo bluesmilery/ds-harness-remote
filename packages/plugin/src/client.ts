@@ -498,7 +498,9 @@ window.__ModuleLoader__.load({
             showGroupTitle: true,
             candidates: async (_session: unknown, request: { query: string; signal: AbortSignal }) => {
               const settings = await control<{ config?: { remoteTools?: { enabled?: boolean } } }>('settings.get').catch(() => undefined)
-              if (settings?.config?.remoteTools?.enabled !== true) return []
+              // A missing/failed settings route is expected on older Hosts. Only
+              // an explicit disabled value should suppress the device candidates.
+              if (settings?.config?.remoteTools?.enabled === false) return []
               const devices = await control<RemoteDevice[]>('devices').catch(() => [])
               const query = request.query.trim().toLocaleLowerCase()
               return devices
