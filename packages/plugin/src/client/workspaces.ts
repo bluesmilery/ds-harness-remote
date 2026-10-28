@@ -4,7 +4,7 @@ import type { OAuthProviderInfo } from '../server-api.js'
 import type { StatusFeed } from '../status-stream.js'
 import { deepSeekWorkspaceIcon, gptWorkspaceIcon } from './icons.js'
 import { pendingWorkspaceSelectionKey } from './navigation.js'
-import { connectedClientModeLabel, connectedProgress, formatPlatform, messageOf } from './presentation.js'
+import { connectedClientModeLabel, connectedProgress, connectionErrorMessage, formatPlatform, messageOf } from './presentation.js'
 import { createRemoteProgressView, runConnectHostProgress } from './progress.js'
 import type {
   ClientReact,
@@ -34,6 +34,13 @@ export function createRemoteWorkspaceAction(React: ClientReact) {
     openSettings?: () => void
   }): unknown {
     const { t } = props
+    const connectionErrorMessageFor = (reason: unknown, translate: Translate): string => {
+      if (typeof reason === 'object' && reason !== null && 'code' in reason) {
+        const code = (reason as { code?: unknown }).code
+        if (typeof code === 'string') return connectionErrorMessage(code, translate)
+      }
+      return messageOf(reason)
+    }
     const [open, setOpen] = React.useState(false)
     const [status, setStatus] = React.useState<RemoteStatus | undefined>(undefined)
     const [devices, setDevices] = React.useState<RemoteDevice[]>([])
@@ -99,9 +106,13 @@ export function createRemoteWorkspaceAction(React: ClientReact) {
     const [qrSession, setQrSession] = React.useState<OAuthQrSession | undefined>(undefined)
     const [qrImage, setQrImage] = React.useState<string | undefined>(undefined)
     const [qrExpired, setQrExpired] = React.useState(false)
+    const [hostEmail, setHostEmail] = React.useState('')
+    const [hostPassword, setHostPassword] = React.useState('')
+    const [hostRegistrationCode, setHostRegistrationCode] = React.useState('')
     const [progress, setProgress] = React.useState<RemoteConnectionProgress | undefined>(undefined)
     const progressRun = React.useRef(0)
     const qrFlowRun = React.useRef(0)
+    const pageRef = React.useRef<HTMLElement | null>(null)
     const [notice, setNotice] = React.useState<string | undefined>(undefined)
     const [error, setError] = React.useState<string | undefined>(undefined)
 
@@ -111,6 +122,12 @@ export function createRemoteWorkspaceAction(React: ClientReact) {
         qrFlowRun.current += 1
         setBusy(false)
       }
+    }, [open])
+
+    React.useEffect(() => {
+      if (!open) return
+      const frame = window.requestAnimationFrame(() => pageRef.current?.focus())
+      return () => window.cancelAnimationFrame(frame)
     }, [open])
 
     React.useEffect(() => {
@@ -241,7 +258,6 @@ export function createRemoteWorkspaceAction(React: ClientReact) {
             setBusy(true)
             setError(undefined)
             setQrExpired(false)
-            setNeedsAuthorization(false)
             try {
               const [nextDevices, nextStatus] = await Promise.all([
                 props.control<RemoteDevice[]>('devices'),
@@ -250,9 +266,10 @@ export function createRemoteWorkspaceAction(React: ClientReact) {
               if (active && run === qrFlowRun.current) {
                 setDevices(nextDevices)
                 setStatus(nextStatus)
+                setNeedsAuthorization(false)
               }
             } catch (reason) {
-              if (active && run === qrFlowRun.current) setError(messageOf(reason))
+              if (active && run === qrFlowRun.current) setError(connectionErrorMessageFor(reason, t))
             } finally {
               if (run === qrFlowRun.current) {
                 setQrSession(undefined)
@@ -388,7 +405,7 @@ export function createRemoteWorkspaceAction(React: ClientReact) {
         setAddingWorkspace(false)
         setDirectory(undefined)
       } catch (reason) {
-        setError(messageOf(reason))
+        setError(connectionErrorMessageFor(reason, t))
       } finally {
         // A failed attempt expands the full Host list again; a successful one
         // is represented by `selectedHost`.
@@ -415,7 +432,7 @@ export function createRemoteWorkspaceAction(React: ClientReact) {
         setClaudeWorkspaceId(undefined)
         setPath(listing.path)
       } catch (reason) {
-        setError(messageOf(reason))
+        setError(connectionErrorMessageFor(reason, t))
       } finally {
         setBusy(false)
       }
@@ -497,7 +514,6 @@ export function createRemoteWorkspaceAction(React: ClientReact) {
           if (!authorization.hasCredentials) {
             throw Object.assign(new Error('Remote account authorization is required.'), { code: 'ACCOUNT_AUTH_REQUIRED' })
           }
-          setNeedsAuthorization(previous => previous === true ? undefined : previous)
           const nextDevices = await props.control<RemoteDevice[]>('devices')
           setDevices(nextDevices)
           setNeedsAuthorization(false)
@@ -586,7 +602,7 @@ export function createRemoteWorkspaceAction(React: ClientReact) {
           }
         }
       } catch (reason) {
-        setError(messageOf(reason))
+        setError(connectionErrorMessageFor(reason, t))
       } finally {
         setBusy(false)
       }
@@ -699,7 +715,28 @@ export function createRemoteWorkspaceAction(React: ClientReact) {
         setNeedsAuthorization(false)
         setPassword('')
       } catch (reason) {
-        setError(messageOf(reason))
+        setError(connectionErrorMessageFor(reason, t))
+      } finally {
+        setBusy(false)
+      }
+    }
+
+    const authorizeHost = async (kind: 'account' | 'code'): Promise<void> => {
+      if (kind === 'account' && (hostEmail.trim() === '' || hostPassword === '')) return
+      if (kind === 'code' && hostRegistrationCode.trim() === '') return
+      setBusy(true)
+      setError(undefined)
+      try {
+        if (kind === 'account') {
+          await props.control('host.account.login', { email: hostEmail.trim(), password: hostPassword })
+          setHostPassword('')
+        } else {
+          await props.control('host.registration-code.submit', { code: hostRegistrationCode.trim() })
+          setHostRegistrationCode('')
+        }
+        setStatus(await props.control<RemoteStatus>('status'))
+      } catch (reason) {
+        setError(connectionErrorMessageFor(reason, t))
       } finally {
         setBusy(false)
       }
@@ -948,6 +985,8 @@ export function createRemoteWorkspaceAction(React: ClientReact) {
         role: 'dialog',
         'aria-modal': true,
         'aria-label': selectedHost?.name ?? t('remoteTitle'),
+        tabIndex: -1,
+        ref: pageRef,
       },
         React.createElement('header', { className: 'dshRemotePageHeader' },
           React.createElement('div', { className: 'dshRemotePageIntro' },
@@ -1004,6 +1043,10 @@ export function createRemoteWorkspaceAction(React: ClientReact) {
                   onClick: () => selectLoginMethod('password'),
                 }, t('accountPasswordLogin'))),
               providersLoading ? React.createElement('p', { role: 'status' }, t('loadingLoginProviders')) : null,
+              providersFailed ? React.createElement('button', {
+                type: 'button', disabled: busy || savingServer || serverDirty,
+                onClick: () => { setError(undefined); setProviderReload(value => value + 1) },
+              }, t('retryLoginProviders')) : null,
               !savingServer && !serverDirty && !providersLoading && !providersFailed && oauthProviders.length === 0
                 ? React.createElement('p', { role: 'status' }, t('noLoginProviders')) : null,
               loginMethod !== 'password' && selectedProvider !== undefined
@@ -1086,6 +1129,17 @@ export function createRemoteWorkspaceAction(React: ClientReact) {
                     }, React.createElement('path', { d: 'M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4L16.5 3.5Z' })))))) : null,
             needsAuthorization !== false ? null : React.createElement(React.Fragment, null,
               selectedHost === undefined ? React.createElement('section', { className: 'dshRemoteHosts', 'aria-label': t('chooseHost') },
+                status?.hostAuthorizationAvailable && status.host?.accountRequired
+                  ? React.createElement('section', { className: 'dshRemoteHostAccount' },
+                    React.createElement('strong', null, t('thisMachineHost')),
+                    React.createElement('p', null, t('hostSignInHint')),
+                    React.createElement('div', { className: 'dshRemoteLogin' },
+                      React.createElement('input', { type: 'email', value: hostEmail, disabled: busy, autoComplete: 'username', placeholder: t('serverAccountEmail'), 'aria-label': t('serverAccountEmail'), onChange: (event: Event) => setHostEmail((event.target as HTMLInputElement).value) }),
+                      React.createElement('input', { type: 'password', value: hostPassword, disabled: busy, autoComplete: 'current-password', placeholder: t('serverAccountPassword'), 'aria-label': t('serverAccountPassword'), onChange: (event: Event) => setHostPassword((event.target as HTMLInputElement).value) }),
+                      React.createElement('button', { type: 'button', disabled: busy || hostEmail.trim() === '' || hostPassword === '', onClick: () => void authorizeHost('account') }, t(busy ? 'signingIn' : 'signInRegisterHost')),
+                      React.createElement('input', { value: hostRegistrationCode, disabled: busy, autoComplete: 'one-time-code', placeholder: t('hostRegistrationCode'), 'aria-label': t('hostRegistrationCode'), onChange: (event: Event) => setHostRegistrationCode((event.target as HTMLInputElement).value) }),
+                      React.createElement('button', { type: 'button', disabled: busy || hostRegistrationCode.trim() === '', onClick: () => void authorizeHost('code') }, t(busy ? 'registering' : 'useRegistrationCode'))))
+                  : null,
                 React.createElement('div', { className: 'dshRemoteSectionHeading' },
                   React.createElement('div', { className: 'dshRemoteSectionTitle' },
                     React.createElement('strong', null, t('chooseHost')),
@@ -1533,7 +1587,7 @@ export function createRemoteWorkspaceAction(React: ClientReact) {
                       onClick: () => void openWorkspace(),
                     }, t(busy ? 'openingWorkspace' : addingWorkspace ? 'confirmAddWorkspace' : 'openWorkspace')))))),
           notice === undefined ? null : React.createElement('p', { className: 'dshRemoteNotice', role: 'status' }, notice),
-          error === undefined ? null : React.createElement('p', { className: 'dshRemoteError', role: 'alert' }, error)))))
+              error === undefined ? null : React.createElement('p', { className: 'dshRemoteError', role: 'alert' }, error)))))
   }
 
   return RemoteWorkspaceAction

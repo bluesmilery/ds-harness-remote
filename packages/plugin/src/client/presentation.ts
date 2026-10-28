@@ -147,6 +147,7 @@ export function observedConnectionProgress(
 
 export function connectionErrorMessage(code: string, t: Translate): string {
   if (code === 'ACCOUNT_AUTH_REQUIRED') return t('hostSignInHint')
+  if (code === 'AUTH_REQUIRED') return t('hostSignInHint')
   if (code === 'AUTH_INVALID' || code === 'TOKEN_EXPIRED') {
     return t('connectionAuthorizationExpired')
   }

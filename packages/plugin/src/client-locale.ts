@@ -15,7 +15,7 @@ export const en = {
   settings: 'Settings',
 
   pluginTitle: 'DeepSeek Remote',
-  pluginDescription: 'Connect once. Available anytime.',
+  pluginDescription: 'P2P-based, end-to-end encrypted remote access to DeepSeek Harness, CodeX, Claude Code, Pi, and other workspaces from DSH Desktop, the web, iOS, and Android clients.',
   expandSettings: 'Show settings: {name}',
   collapseSettings: 'Hide settings: {name}',
   unsaved: 'Unsaved',
@@ -294,7 +294,7 @@ export const zh: Record<keyof typeof en, string> = {
   settings: '设置',
 
   pluginTitle: 'DeepSeek 远程连接',
-  pluginDescription: '一次连接，随时可用。',
+  pluginDescription: '基于 P2P 网络，使用端到端加密远程访问 DeepSeek Harness、CodeX、Claude Code、Pi 等工作区，支持 DSH 桌面、网页端、iOS 和 Android 客户端。',
   expandSettings: '展开设置：{name}',
   collapseSettings: '收起设置：{name}',
   unsaved: '未保存',

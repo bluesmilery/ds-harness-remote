@@ -23,7 +23,6 @@ export function createRemotePluginOptions(React: ClientReact) {
     const [remoteToolsBusy, setRemoteToolsBusy] = React.useState(false)
     const [remoteToolsEnabled, setRemoteToolsEnabled] = React.useState(true)
     const role = 'host' as const
-    const [registrationCode, setRegistrationCode] = React.useState('')
     const [associations, setAssociations] = React.useState<Partial<Record<'host' | 'client', PluginAssociation>>>({})
     const [loaded, setLoaded] = React.useState(false)
     const [writable, setWritable] = React.useState(false)
@@ -46,10 +45,7 @@ export function createRemotePluginOptions(React: ClientReact) {
     const [error, setError] = React.useState<string | undefined>(undefined)
     const [settingsView, setSettingsView] = React.useState<PluginSettingsView | undefined>(undefined)
     const associationReadRun = React.useRef(0)
-    const persistedServerUrl = settingsView?.config.serverUrl ?? 'https://dsh.r2049.cn'
     const association = associations.client ?? associations.host
-    const serverDirty = settingsView !== undefined && serverUrl !== persistedServerUrl
-    const draftDirty = serverDirty
 
     const applyAssociations = (view: PluginSettingsView): void => {
       setAssociations(view.associations ?? (view.association === undefined ? {} : { host: view.association }))
@@ -91,38 +87,19 @@ export function createRemotePluginOptions(React: ClientReact) {
         setHostName(status.deviceName ?? '')
         setHostDeviceId(status.host?.deviceId ?? '')
         // Either account entry point rotates these identities on sign-out.
-        // Refresh both associations on that change, without resetting drafts
-        // or fetching settings for ordinary connection/statistics updates.
+        // Refresh the read-only settings snapshot on that change without
+        // fetching settings for ordinary connection/statistics updates.
         const key = JSON.stringify([status.serverUrl, status.deviceId, status.host?.deviceId,
           status.host?.authorized, status.host?.account])
         if (key === authorizationKey) return
         authorizationKey = key
         const run = ++associationReadRun.current
         void props.control<PluginSettingsView>('settings.get').then(view => {
-          if (active && run === associationReadRun.current) applyAssociations(view)
+          if (active && run === associationReadRun.current) applyView(view)
         }).catch(() => undefined)
       })
       return () => { active = false; unsubscribe() }
     }, [props.statusFeed])
-
-    const save = async (event?: Event): Promise<void> => {
-      event?.preventDefault()
-      if (!writable || !serverDirty) return
-      setBusy(true)
-      setNotice(undefined)
-      setError(undefined)
-      try {
-        const view = await props.control<PluginSettingsView>('settings.server.set', {
-          serverUrl,
-        })
-        applyView(view)
-        setNotice({ key: view.applies === 'live' ? 'serverApplied' : 'serverSaved' })
-      } catch (reason) {
-        setError(messageOf(reason))
-      } finally {
-        setBusy(false)
-      }
-    }
 
     const logout = async (): Promise<void> => {
       const run = ++associationReadRun.current
@@ -132,7 +109,6 @@ export function createRemotePluginOptions(React: ClientReact) {
       try {
         const view = await props.control<PluginSettingsView>('settings.logout')
         applyView(view, run === associationReadRun.current)
-        setRegistrationCode('')
         setNotice({ key: 'signedOut' })
       } catch (reason) {
         setError(messageOf(reason))
@@ -255,13 +231,6 @@ export function createRemotePluginOptions(React: ClientReact) {
       }
     }
 
-    const discard = (): void => {
-      if (settingsView !== undefined) applyView(settingsView)
-      setRegistrationCode('')
-      setNotice(undefined)
-      setError(undefined)
-    }
-
     const developmentSetting = React.createElement('section', { className: 'dshRemoteDevelopmentSettings' },
       React.createElement('div', { className: 'dshRemoteAuthorizationSetting' },
         React.createElement('div', null, React.createElement('strong', null, t('terminalRemote')),
@@ -316,11 +285,9 @@ export function createRemotePluginOptions(React: ClientReact) {
           React.createElement('span', { className: 'dshRemotePluginCardHeading' },
             React.createElement('strong', null, t('pluginTitle')),
             React.createElement('span', null, t('pluginDescription'))),
-          draftDirty
-            ? React.createElement('span', { className: 'dshRemotePluginCardStatus' }, t('unsaved'))
-            : association === undefined ? null : React.createElement('span', {
-              className: `dshRemotePluginCardStatus${connectionStatusClass(hostStatus)}`,
-            }, hostStatus === undefined ? t('associated') : connectionStatusLabel(hostStatus, t)),
+          association === undefined ? null : React.createElement('span', {
+            className: `dshRemotePluginCardStatus${connectionStatusClass(hostStatus)}`,
+          }, hostStatus === undefined ? t('associated') : connectionStatusLabel(hostStatus, t)),
           React.createElement('span', { className: 'dshRemotePluginCardChevron', 'aria-hidden': true }, '⌄'))),
       !open ? null : React.createElement('div', { className: 'dshRemotePluginCardBody' },
         !loaded
@@ -343,16 +310,8 @@ export function createRemotePluginOptions(React: ClientReact) {
                   React.createElement('span', null, t('deviceId')),
                   React.createElement('code', null, hostDeviceId || '—'))),
               React.createElement('div', { className: 'dshRemoteField' },
-                React.createElement('label', { htmlFor: 'dsh-remote-server-url-authorized' }, t('serverUrl')),
-                React.createElement('input', {
-                  id: 'dsh-remote-server-url-authorized',
-                  type: 'url',
-                  value: serverUrl,
-                  disabled: true,
-                  required: true,
-                  placeholder: 'https://dsh.r2049.cn',
-                  onChange: (event: Event) => { setServerUrl((event.target as HTMLInputElement).value); setNotice(undefined) },
-                }),
+                React.createElement('label', null, t('serverUrl')),
+                React.createElement('div', { className: 'dshRemoteFieldValue' }, serverUrl),
                 React.createElement('p', null, t('serverUrlHint'))),
               developmentSetting,
               acpSetting,
@@ -395,18 +354,13 @@ export function createRemotePluginOptions(React: ClientReact) {
                   className: error !== undefined ? 'dshRemoteError' : 'dshRemoteNotice',
                   role: error !== undefined ? 'alert' : 'status',
                 }, error ?? (notice === undefined ? '' : t(notice.key, notice.params))),
-                draftDirty
-                  ? React.createElement(React.Fragment, null,
-                    React.createElement('button', { type: 'button', className: 'dshRemoteDiscard', disabled: busy, onClick: discard }, t('discard')),
-                    React.createElement('button', { type: 'button', className: 'dshRemoteSave', disabled: busy || !writable, onClick: () => void save() }, t(busy ? 'saving' : 'save')),
-                    React.createElement('button', { type: 'button', className: 'dshRemoteDiscard', disabled: busy || !writable, onClick: () => void logout() }, t(busy ? 'signingOut' : 'signOut')))
-                  : React.createElement('button', {
-                    type: 'button',
-                    className: 'dshRemoteDiscard',
-                    disabled: busy || !writable,
-                    onClick: () => void logout(),
-                  }, t(busy ? 'signingOut' : 'signOut'))))
-            : React.createElement('form', { className: 'dshRemoteSettings', noValidate: true, onSubmit: (event: Event) => void save(event) },
+                React.createElement('button', {
+                  type: 'button',
+                  className: 'dshRemoteDiscard',
+                  disabled: busy || !writable,
+                  onClick: () => void logout(),
+                }, t(busy ? 'signingOut' : 'signOut'))))
+            : React.createElement('div', { className: 'dshRemoteSettings' },
               React.createElement('div', { className: 'dshRemoteHostIdentity' },
                 React.createElement('div', null,
                   React.createElement('span', null, t('hostName')),
@@ -415,33 +369,23 @@ export function createRemotePluginOptions(React: ClientReact) {
                   React.createElement('span', null, t('deviceId')),
                   React.createElement('code', null, hostDeviceId || '—'))),
               React.createElement('div', { className: 'dshRemoteField' },
-                React.createElement('label', { htmlFor: 'dsh-remote-server-url' }, t('serverUrl')),
-                React.createElement('input', {
-                  id: 'dsh-remote-server-url',
-                  type: 'url',
-                  value: serverUrl,
-                  disabled: busy || !writable,
-                  required: true,
-                  placeholder: 'https://dsh.r2049.cn',
-                  onChange: (event: Event) => { setServerUrl((event.target as HTMLInputElement).value); setNotice(undefined) },
-                }),
+                React.createElement('label', null, t('serverUrl')),
+                React.createElement('div', { className: 'dshRemoteFieldValue' }, serverUrl),
                 React.createElement('p', null, t('serverUrlHint'))),
               developmentSetting,
               acpSetting,
               React.createElement('div', { className: 'dshRemoteSettingsSignIn' },
-                React.createElement('p', { className: 'dshRemoteSettingsState' }, t(serverDirty ? 'saveServerBeforeSignIn' : 'authorizeFromRemote')),
+                React.createElement('p', { className: 'dshRemoteSettingsState' }, t('authorizeFromRemote')),
                 React.createElement('button', {
-                  type: 'button', className: 'dshRemoteSave', disabled: busy || !loaded || serverDirty,
+                  type: 'button', className: 'dshRemoteSave', disabled: busy || !loaded,
                   onClick: props.onSignIn,
                 }, t('signInAccount'))),
               !writable ? React.createElement('p', { className: 'dshRemoteError' }, t('readOnly')) : null,
-              React.createElement('div', { className: 'dshRemoteSettingsFooter' },
+              error !== undefined || notice !== undefined ? React.createElement('div', { className: 'dshRemoteSettingsFooter' },
                 React.createElement('p', {
                   className: error !== undefined ? 'dshRemoteError' : 'dshRemoteNotice',
                   role: error !== undefined ? 'alert' : 'status',
-                }, error ?? (notice === undefined ? '' : t(notice.key, notice.params))),
-                React.createElement('button', { type: 'button', className: 'dshRemoteDiscard', disabled: busy || !draftDirty, onClick: discard }, t('discard')),
-                React.createElement('button', { type: 'submit', className: 'dshRemoteSave', disabled: busy || !writable || !serverDirty }, t(busy ? 'saving' : 'save'))))))
+                }, error ?? t(notice!.key, notice!.params))) : null)))
   }
 
   return RemotePluginOptions
