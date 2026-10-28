@@ -294,7 +294,7 @@ export const zh: Record<keyof typeof en, string> = {
   settings: '设置',
 
   pluginTitle: 'DeepSeek 远程连接',
-  pluginDescription: '基于 P2P 网络，使用端到端加密远程访问 DeepSeek Harness、CodeX、Claude Code、Pi 等工作区，支持 DSH 桌面、网页端、iOS 和 Android 客户端。',
+  pluginDescription: '基于 P2P 网络，使用端到端加密远程访问 DeepSeek Harness、CodeX、Claude Code、Pi 等工作区，支持Web和移动端。',
   expandSettings: '展开设置：{name}',
   collapseSettings: '收起设置：{name}',
   unsaved: '未保存',

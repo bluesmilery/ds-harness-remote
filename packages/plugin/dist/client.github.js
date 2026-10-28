@@ -1909,7 +1909,7 @@ Minimum version required to store current data is: ` + bestVersion + `.
     previewLocalOnly: "\u9884\u89C8\u9700\u8981 Desktop\uFF0C\u6216\u8FDE\u63A5\u5230\u672C\u673A Harness \u7684\u6D4F\u89C8\u5668\u3002",
     settings: "\u8BBE\u7F6E",
     pluginTitle: "DeepSeek \u8FDC\u7A0B\u8FDE\u63A5",
-    pluginDescription: "\u57FA\u4E8E P2P \u7F51\u7EDC\uFF0C\u4F7F\u7528\u7AEF\u5230\u7AEF\u52A0\u5BC6\u8FDC\u7A0B\u8BBF\u95EE DeepSeek Harness\u3001CodeX\u3001Claude Code\u3001Pi \u7B49\u5DE5\u4F5C\u533A\uFF0C\u652F\u6301 DSH \u684C\u9762\u3001\u7F51\u9875\u7AEF\u3001iOS \u548C Android \u5BA2\u6237\u7AEF\u3002",
+    pluginDescription: "\u57FA\u4E8E P2P \u7F51\u7EDC\uFF0C\u4F7F\u7528\u7AEF\u5230\u7AEF\u52A0\u5BC6\u8FDC\u7A0B\u8BBF\u95EE DeepSeek Harness\u3001CodeX\u3001Claude Code\u3001Pi \u7B49\u5DE5\u4F5C\u533A\uFF0C\u652F\u6301Web\u548C\u79FB\u52A8\u7AEF\u3002",
     expandSettings: "\u5C55\u5F00\u8BBE\u7F6E\uFF1A{name}",
     collapseSettings: "\u6536\u8D77\u8BBE\u7F6E\uFF1A{name}",
     unsaved: "\u672A\u4FDD\u5B58",
