@@ -29,21 +29,12 @@ export function createRemotePluginOptions(React: ClientReact) {
     const [busy, setBusy] = React.useState(false)
     const [terminalEnabled, setTerminalEnabled] = React.useState(false)
     const [terminalBusy, setTerminalBusy] = React.useState(false)
-    const [acpBackends, setAcpBackends] = React.useState<Array<{ id: string; enabled: boolean }>>([])
-    const [acpAvailability, setAcpAvailability] = React.useState<Record<string, boolean>>({})
-    const [acpChecking, setAcpChecking] = React.useState<Record<string, boolean>>({})
-    const [acpCheckResults, setAcpCheckResults] = React.useState<Record<string, boolean | undefined>>({})
-    const [addingAcp, setAddingAcp] = React.useState(false)
-    const [acpName, setAcpName] = React.useState('')
-    const [acpCommand, setAcpCommand] = React.useState('')
-    const [acpArguments, setAcpArguments] = React.useState('acp')
     const [reconnectBusy, setReconnectBusy] = React.useState(false)
     const [hostStatus, setHostStatus] = React.useState<RemoteStatus['host'] | undefined>(undefined)
     const [hostName, setHostName] = React.useState('')
     const [hostDeviceId, setHostDeviceId] = React.useState('')
     const [notice, setNotice] = React.useState<LocalizedMessage | undefined>(undefined)
     const [error, setError] = React.useState<string | undefined>(undefined)
-    const [settingsView, setSettingsView] = React.useState<PluginSettingsView | undefined>(undefined)
     const associationReadRun = React.useRef(0)
     const association = associations.client ?? associations.host
 
@@ -52,12 +43,9 @@ export function createRemotePluginOptions(React: ClientReact) {
     }
 
     const applyView = (view: PluginSettingsView, updateAssociations = true): void => {
-      setSettingsView(view)
       setServerUrl(view.config.serverUrl ?? 'https://dsh.r2049.cn')
       setTerminalEnabled(view.config.terminal?.enabled ?? true)
       setRemoteToolsEnabled(view.config.remoteTools?.enabled ?? true)
-      setAcpBackends((view.config.acp?.backends ?? []).map(item => ({ id: item.id, enabled: item.enabled !== false })))
-      setAcpAvailability(view.acpAvailability ?? {})
       if (updateAssociations) applyAssociations(view)
       setWritable(view.writable)
       setLoaded(true)
@@ -177,60 +165,6 @@ export function createRemotePluginOptions(React: ClientReact) {
       finally { setRemoteToolsBusy(false) }
     }
 
-    const checkAcp = async (backend: string): Promise<void> => {
-      if (acpChecking[backend]) return
-      setAcpChecking(current => ({ ...current, [backend]: true }))
-      setAcpCheckResults(current => ({ ...current, [backend]: undefined }))
-      setError(undefined)
-      try {
-        const view = await props.control<PluginSettingsView>('settings.get')
-        applyView(view)
-        const available = view.acpAvailability?.[backend] === true
-        if (!available && view.writable && view.config.acp?.backends?.some(item => item.id === backend && item.enabled !== false)) {
-          applyView(await props.control<PluginSettingsView>('settings.acp.set', { backend, enabled: false }))
-        }
-        setAcpCheckResults(current => ({ ...current, [backend]: available }))
-        setNotice({ key: available ? 'acpAvailable' : 'acpUnavailable' })
-        window.setTimeout(() => setAcpCheckResults(current => ({ ...current, [backend]: undefined })), 5_000)
-      } catch (reason) {
-        setError(messageOf(reason))
-      } finally {
-        setAcpChecking(current => ({ ...current, [backend]: false }))
-      }
-    }
-
-    const addAcp = async (): Promise<void> => {
-      setBusy(true)
-      setError(undefined)
-      try {
-        const view = await props.control<PluginSettingsView>('settings.acp.add', {
-          id: acpName.trim(), command: acpCommand.trim(), args: acpArguments.trim() === '' ? [] : acpArguments.trim().split(/\s+/),
-        })
-        applyView(view)
-        setAddingAcp(false)
-        setAcpName('')
-        setAcpCommand('')
-        setAcpArguments('acp')
-      } catch (reason) {
-        setError(messageOf(reason))
-      } finally {
-        setBusy(false)
-      }
-    }
-
-    const removeAcp = async (backend: string): Promise<void> => {
-      setBusy(true)
-      setError(undefined)
-      try {
-        const view = await props.control<PluginSettingsView>('settings.acp.remove', { id: backend })
-        applyView(view)
-      } catch (reason) {
-        setError(messageOf(reason))
-      } finally {
-        setBusy(false)
-      }
-    }
-
     const developmentSetting = React.createElement('section', { className: 'dshRemoteDevelopmentSettings' },
       React.createElement('div', { className: 'dshRemoteAuthorizationSetting' },
         React.createElement('div', null, React.createElement('strong', null, t('terminalRemote')),
@@ -244,32 +178,6 @@ export function createRemotePluginOptions(React: ClientReact) {
         React.createElement('div', null, React.createElement('strong', null, t('remoteTools')), React.createElement('p', null, t('remoteToolsHint'))),
         React.createElement('input', { type: 'checkbox', role: 'switch', checked: remoteToolsEnabled, disabled: remoteToolsBusy || !writable, 'aria-label': t('remoteTools'), onChange: (event: Event) => { const enabled = (event.target as HTMLInputElement).checked; setRemoteToolsEnabled(enabled); void setRemoteTools(enabled) } })),
       )
-
-    const acpSetting = React.createElement('details', { className: 'dshRemoteAuthorizationSetting dshRemoteAcpSetting' },
-      React.createElement('summary', null,
-        React.createElement('div', { className: 'dshRemoteAcpSummaryText' },
-          React.createElement('strong', null, t('agentBackends')),
-          React.createElement('p', null, t('acpHint'), React.createElement('a', {
-            href: 'https://github.com/liguobao/ds-harness-remote/blob/feat/cursor-remote/docs/acp-remote.md',
-            target: '_blank', rel: 'noopener noreferrer',
-            onClick: (event: Event) => event.stopPropagation(),
-          }, t('acpDocumentation'))))),
-      React.createElement('div', { className: 'dshRemoteAcpList' }, acpBackends.map(item => React.createElement('div', { key: item.id, className: 'dshRemoteAuthorizationSetting' },
-        React.createElement('div', null, React.createElement('strong', null, item.id === 'codex' ? 'CodeX' : item.id === 'cursor' ? 'Cursor' : item.id === 'antigravity' ? 'AGY' : item.id === 'claude' ? 'Claude' : item.id === 'pi' ? 'Pi' : item.id === 'opencode' ? 'OpenCode' : item.id), null),
-        React.createElement('span', { className: 'dshRemoteAcpCheckCell' },
-          React.createElement('a', { href: `#check-acp-${item.id}`, className: `dshRemoteAcpCheckLink${acpChecking[item.id] ? ' isChecking' : acpCheckResults[item.id] === undefined ? '' : acpCheckResults[item.id] ? ' isPassed' : ' isFailed'}`, onClick: (event: Event) => { event.preventDefault(); void checkAcp(item.id) } },
-            acpChecking[item.id] ? t('checkingAcp') : acpCheckResults[item.id] === undefined ? t('checkAcp') : t(acpCheckResults[item.id] ? 'acpCheckPassed' : 'acpCheckFailed'))),
-        ['codex', 'cursor', 'antigravity', 'pi', 'claude', 'opencode'].includes(item.id) ? null : React.createElement('a', { href: `#remove-acp-${item.id}`, className: 'dshRemoteAcpRemoveLink', onClick: (event: Event) => { event.preventDefault(); void removeAcp(item.id) } }, t('removeAcp')),
-        React.createElement('input', {
-          type: 'checkbox', role: 'switch', checked: settingsView?.config.acp?.enabled === true && item.enabled && acpAvailability[item.id] === true, 'aria-label': item.id, disabled: busy || !writable || acpChecking[item.id] === true || acpAvailability[item.id] !== true,
-          onChange: (event: Event) => void props.control<PluginSettingsView>('settings.acp.set', { backend: item.id, enabled: (event.target as HTMLInputElement).checked }).then(view => { applyView(view); setAcpBackends((view.config.acp?.backends ?? []).map(v => ({ id: v.id, enabled: v.enabled !== false }))) }).catch(reason => setError(messageOf(reason)))
-        }))),
-        addingAcp ? React.createElement('div', { className: 'dshRemoteAcpAddForm' },
-          React.createElement('label', null, t('acpName'), React.createElement('input', { value: acpName, size: 16, placeholder: t('acpName'), 'aria-label': t('acpName'), onChange: (event: Event) => setAcpName((event.target as HTMLInputElement).value) })),
-          React.createElement('label', null, t('acpCommand'), React.createElement('input', { value: acpCommand, size: 20, placeholder: t('acpCommand'), 'aria-label': t('acpCommand'), onChange: (event: Event) => setAcpCommand((event.target as HTMLInputElement).value) })),
-          React.createElement('label', null, t('acpArguments'), React.createElement('input', { value: acpArguments, size: 20, placeholder: t('acpArguments'), 'aria-label': t('acpArguments'), onChange: (event: Event) => setAcpArguments((event.target as HTMLInputElement).value) })),
-          React.createElement('button', { type: 'button', disabled: busy || acpName.trim() === '' || acpCommand.trim() === '', onClick: () => void addAcp() }, t('addAcp')))
-          : React.createElement('a', { href: '#add-acp', className: 'dshRemoteAcpAddLink', onClick: (event: Event) => { event.preventDefault(); setAddingAcp(true) } }, t('addAcp'))))
 
     if (props.view === 'summary') return React.createElement('span', null, t('pluginDescription'))
 
@@ -310,7 +218,6 @@ export function createRemotePluginOptions(React: ClientReact) {
                   React.createElement('span', null, t('deviceId')),
                   React.createElement('code', null, hostDeviceId || '—'))),
               developmentSetting,
-              acpSetting,
               React.createElement('div', { className: 'dshRemoteAuthorizationSetting' },
                 React.createElement('div', null,
                   React.createElement('strong', null, t('allowControlCurrentDevice')),
@@ -365,7 +272,6 @@ export function createRemotePluginOptions(React: ClientReact) {
                   React.createElement('span', null, t('deviceId')),
                   React.createElement('code', null, hostDeviceId || '—'))),
               developmentSetting,
-              acpSetting,
               React.createElement('div', { className: 'dshRemoteSettingsSignIn' },
                 React.createElement('p', { className: 'dshRemoteSettingsState' }, t('authorizeFromRemote')),
                 React.createElement('button', {
