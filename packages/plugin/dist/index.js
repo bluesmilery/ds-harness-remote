@@ -90439,7 +90439,7 @@ function createPump() {
     wake = resolve6;
   });
   void (async () => {
-    for (; ; ) {
+    for (;;) {
       if (queue.length === 0) {
         await sleeping;
         sleeping = new Promise((resolve6) => {
