@@ -90466,8 +90466,11 @@ function createPump() {
 }
 var globalState = globalThis;
 var pump = globalState[PUMP_KEY] ?? (globalState[PUMP_KEY] = createPump());
-function runHmrSafe(run) {
-  return pump.enqueue(run);
+function runHmrSafe(run, hmr) {
+  return pump.enqueue(() => {
+    const executing = hmr?.executing;
+    return typeof executing?.exit === "function" ? executing.exit(run) : run();
+  });
 }
 
 // src/remote-file-content-provider.ts
@@ -90819,12 +90822,13 @@ function locateEntryId(ctx) {
 }
 async function createSettingsBinding(ctx, settings, readConfig, entryId) {
   if (settings === void 0) return void 0;
+  const hmr = ctx.get("hmr", false);
   if (!isLegacySettingsProvider(settings)) {
     return {
       get: readConfig,
       replace: (section) => runHmrSafe(async () => {
         await settings.replace(entryId, section);
-      })
+      }, hmr)
     };
   }
   const scope2 = settings.register(pluginSettingsNamespace, Config, {
@@ -90834,12 +90838,12 @@ async function createSettingsBinding(ctx, settings, readConfig, entryId) {
       resolveConfig(value);
     }
   });
-  reportSettingsMigration(ctx, await migrateLegacySettings(settings, scope2));
+  reportSettingsMigration(ctx, await migrateLegacySettings(settings, scope2, hmr));
   return {
     get: () => scope2.get(),
     replace: (section) => runHmrSafe(async () => {
       await scope2.replace(section);
-    })
+    }, hmr)
   };
 }
 function isLegacySettingsProvider(value) {
@@ -90849,7 +90853,7 @@ function reportSettingsMigration(ctx, migration) {
   if (migration === "migrated") ctx.logger.info("migrated legacy Remote settings namespace");
   if (migration === "failed") ctx.logger.warn("failed to migrate legacy Remote settings namespace");
 }
-async function migrateLegacySettings(settings, currentScope) {
+async function migrateLegacySettings(settings, currentScope, hmr) {
   if (typeof settings.describe !== "function") return "skipped";
   try {
     let descriptors = settings.describe();
@@ -90867,7 +90871,9 @@ async function migrateLegacySettings(settings, currentScope) {
       legacy = descriptors.find((descriptor) => descriptor.ns === legacySettingsNamespace);
     }
     if (!isPlainRecord2(legacy?.user) || Object.keys(legacy.user).length === 0) return "skipped";
-    await currentScope.replace(legacy.user);
+    await runHmrSafe(async () => {
+      await currentScope.replace(legacy.user);
+    }, hmr);
     return "migrated";
   } catch {
     return "failed";

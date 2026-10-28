@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { describe, expect, it } from 'vitest'
-import { runHmrSafe } from '../src/hmr-safe-settings.js'
+import { runHmrSafe, type HmrContextLike } from '../src/hmr-safe-settings.js'
 
 describe('runHmrSafe', () => {
   it('runs queued writes outside the caller async context', async () => {
@@ -30,5 +30,12 @@ describe('runHmrSafe', () => {
     await expect(second).resolves.toBe(2)
     expect(events).toEqual(['first:start', 'first:end', 'second'])
     await expect(runHmrSafe(async () => { throw new Error('write failed') })).rejects.toThrow('write failed')
+  })
+
+  it('exits the host HMR transaction before invoking a settings write', async () => {
+    const hmrStorage = new AsyncLocalStorage<boolean>()
+    const hmr: HmrContextLike = { executing: hmrStorage }
+    const value = await hmrStorage.run(true, () => runHmrSafe(async () => hmrStorage.getStore(), hmr))
+    expect(value).toBeUndefined()
   })
 })

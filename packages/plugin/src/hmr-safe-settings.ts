@@ -1,8 +1,8 @@
 /**
- * Run settings writes from the context in which the plugin module was first
- * loaded. DSH's HMR AsyncLocalStorage marker can leak into a reloaded fiber;
- * configEditor then sees every later write as a nested transaction. The pump
- * is kept on globalThis so a hot reload reuses the original clean context.
+ * Serialize settings writes and leave DSH's HMR AsyncLocalStorage context
+ * before invoking configEditor. Otherwise a callback reached from a reload is
+ * treated as a nested transaction. The pump is kept on globalThis so a hot
+ * reload reuses the same queue.
  */
 
 type Job<T> = {
@@ -13,6 +13,18 @@ type Job<T> = {
 
 interface Pump {
   enqueue<T>(run: () => Promise<T>): Promise<T>
+}
+
+/**
+ * The HMR service intentionally keeps its AsyncLocalStorage private.  The
+ * runtime still exposes the storage's `exit()` method, which is the boundary
+ * configEditor needs when a plugin callback was entered from an HMR reload.
+ * Keep this structural so older Hosts without HMR continue to use the pump.
+ */
+export interface HmrContextLike {
+  executing?: {
+    exit?<T>(callback: () => T): T
+  }
 }
 
 const PUMP_KEY = Symbol.for('ds-harness-remote.hmr-safe-settings-pump')
@@ -54,6 +66,9 @@ function createPump(): Pump {
 const globalState = globalThis as typeof globalThis & { [PUMP_KEY]?: Pump }
 const pump = globalState[PUMP_KEY] ?? (globalState[PUMP_KEY] = createPump())
 
-export function runHmrSafe<T>(run: () => Promise<T>): Promise<T> {
-  return pump.enqueue(run)
+export function runHmrSafe<T>(run: () => Promise<T>, hmr?: HmrContextLike): Promise<T> {
+  return pump.enqueue(() => {
+    const executing = hmr?.executing
+    return typeof executing?.exit === 'function' ? executing.exit(run) : run()
+  })
 }

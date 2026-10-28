@@ -30,7 +30,7 @@ import {
   type TuiRemoteBinding,
   type TuiRemoteTarget,
 } from './tui-command.js'
-import { runHmrSafe } from './hmr-safe-settings.js'
+import { runHmrSafe, type HmrContextLike } from './hmr-safe-settings.js'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -398,10 +398,11 @@ async function createSettingsBinding(
   entryId: string,
 ): Promise<PluginSettingsBinding | undefined> {
   if (settings === undefined) return undefined
+  const hmr = ctx.get('hmr', false) as HmrContextLike | undefined
   if (!isLegacySettingsProvider(settings)) {
     return {
       get: readConfig,
-      replace: section => runHmrSafe<void>(async () => { await settings.replace(entryId, section) }),
+      replace: section => runHmrSafe<void>(async () => { await settings.replace(entryId, section) }, hmr),
     }
   }
   const scope = settings.register(pluginSettingsNamespace, Config, {
@@ -409,10 +410,10 @@ async function createSettingsBinding(
     applies: 'restart',
     validate: value => { resolveConfig(value) },
   })
-  reportSettingsMigration(ctx, await migrateLegacySettings(settings, scope))
+  reportSettingsMigration(ctx, await migrateLegacySettings(settings, scope, hmr))
   return {
     get: () => scope.get(),
-    replace: section => runHmrSafe<void>(async () => { await scope.replace(section) }),
+    replace: section => runHmrSafe<void>(async () => { await scope.replace(section) }, hmr),
   }
 }
 
@@ -439,6 +440,7 @@ function reportSettingsMigration(
 export async function migrateLegacySettings(
   settings: LegacySettingsProviderLike,
   currentScope: LegacySettingsScopeLike,
+  hmr?: HmrContextLike,
 ): Promise<'migrated' | 'skipped' | 'failed'> {
   if (typeof settings.describe !== 'function') return 'skipped'
   try {
@@ -456,7 +458,7 @@ export async function migrateLegacySettings(
       legacy = descriptors.find(descriptor => descriptor.ns === legacySettingsNamespace)
     }
     if (!isPlainRecord(legacy?.user) || Object.keys(legacy.user).length === 0) return 'skipped'
-    await currentScope.replace(legacy.user as Config)
+    await runHmrSafe<void>(async () => { await currentScope.replace(legacy!.user as Config) }, hmr)
     return 'migrated'
   } catch {
     return 'failed'
