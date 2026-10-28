@@ -2608,10 +2608,10 @@ Minimum version required to store current data is: ` + bestVersion + `.
   // src/client/settings.ts
   function createRemotePluginOptions(React) {
     function RemotePluginOptions(props) {
-      let { t } = props, [open, setOpen] = React.useState(props.view === "page"), [serverUrl, setServerUrl] = React.useState(""), [remoteToolsBusy, setRemoteToolsBusy] = React.useState(!1), [remoteToolsEnabled, setRemoteToolsEnabled] = React.useState(!0), role = "host", [associations, setAssociations] = React.useState({}), [loaded, setLoaded] = React.useState(!1), [writable, setWritable] = React.useState(!1), [busy, setBusy] = React.useState(!1), [terminalEnabled, setTerminalEnabled] = React.useState(!1), [terminalBusy, setTerminalBusy] = React.useState(!1), [reconnectBusy, setReconnectBusy] = React.useState(!1), [hostStatus, setHostStatus] = React.useState(void 0), [hostName, setHostName] = React.useState(""), [hostDeviceId, setHostDeviceId] = React.useState(""), [notice, setNotice] = React.useState(void 0), [error, setError] = React.useState(void 0), associationReadRun = React.useRef(0), association = associations.client ?? associations.host, applyAssociations = (view) => {
+      let { t } = props, [open, setOpen] = React.useState(props.view === "page"), [serverUrl, setServerUrl] = React.useState(""), [remoteToolsBusy, setRemoteToolsBusy] = React.useState(!1), [remoteToolsEnabled, setRemoteToolsEnabled] = React.useState(!0), role = "host", [associations, setAssociations] = React.useState({}), [loaded, setLoaded] = React.useState(!1), [writable, setWritable] = React.useState(!1), [busy, setBusy] = React.useState(!1), [terminalEnabled, setTerminalEnabled] = React.useState(!1), [terminalBusy, setTerminalBusy] = React.useState(!1), [acpBackends, setAcpBackends] = React.useState([]), [acpAvailability, setAcpAvailability] = React.useState({}), [acpChecking, setAcpChecking] = React.useState({}), [acpCheckResults, setAcpCheckResults] = React.useState({}), [reconnectBusy, setReconnectBusy] = React.useState(!1), [hostStatus, setHostStatus] = React.useState(void 0), [hostName, setHostName] = React.useState(""), [hostDeviceId, setHostDeviceId] = React.useState(""), [notice, setNotice] = React.useState(void 0), [error, setError] = React.useState(void 0), [settingsView, setSettingsView] = React.useState(void 0), associationReadRun = React.useRef(0), association = associations.client ?? associations.host, applyAssociations = (view) => {
         setAssociations(view.associations ?? (view.association === void 0 ? {} : { host: view.association }));
       }, applyView = (view, updateAssociations = !0) => {
-        setServerUrl(view.config.serverUrl ?? "https://dsh.r2049.cn"), setTerminalEnabled(view.config.terminal?.enabled ?? !0), setRemoteToolsEnabled(view.config.remoteTools?.enabled ?? !0), updateAssociations && applyAssociations(view), setWritable(view.writable), setLoaded(!0);
+        setSettingsView(view), setServerUrl(view.config.serverUrl ?? "https://dsh.r2049.cn"), setTerminalEnabled(view.config.terminal?.enabled ?? !0), setRemoteToolsEnabled(view.config.remoteTools?.enabled ?? !0), setAcpBackends((view.config.acp?.backends ?? []).map((item) => ({ id: item.id, enabled: item.enabled !== !1 }))), setAcpAvailability(view.acpAvailability ?? {}), updateAssociations && applyAssociations(view), setWritable(view.writable), setLoaded(!0);
       }, load = async () => {
         let run = ++associationReadRun.current, [view, status] = await Promise.all([
           props.control("settings.get"),
@@ -2696,6 +2696,30 @@ Minimum version required to store current data is: ` + bestVersion + `.
         } finally {
           setRemoteToolsBusy(!1);
         }
+      }, checkAcp = async (backend) => {
+        if (!acpChecking[backend]) {
+          setAcpChecking((current) => ({ ...current, [backend]: !0 })), setAcpCheckResults((current) => ({ ...current, [backend]: void 0 })), setError(void 0);
+          try {
+            let view = await props.control("settings.get");
+            applyView(view);
+            let available = view.acpAvailability?.[backend] === !0;
+            !available && view.writable && view.config.acp?.backends?.some((item) => item.id === backend && item.enabled !== !1) && applyView(await props.control("settings.acp.set", { backend, enabled: !1 })), setAcpCheckResults((current) => ({ ...current, [backend]: available })), setNotice({ key: available ? "acpAvailable" : "acpUnavailable" }), window.setTimeout(() => setAcpCheckResults((current) => ({ ...current, [backend]: void 0 })), 5e3);
+          } catch (reason) {
+            setError(messageOf(reason));
+          } finally {
+            setAcpChecking((current) => ({ ...current, [backend]: !1 }));
+          }
+        }
+      }, removeAcp = async (backend) => {
+        setBusy(!0), setError(void 0);
+        try {
+          let view = await props.control("settings.acp.remove", { id: backend });
+          applyView(view);
+        } catch (reason) {
+          setError(messageOf(reason));
+        } finally {
+          setBusy(!1);
+        }
       }, developmentSetting = React.createElement(
         "section",
         { className: "dshRemoteDevelopmentSettings" },
@@ -2725,6 +2749,57 @@ Minimum version required to store current data is: ` + bestVersion + `.
             let enabled = event.target.checked;
             setRemoteToolsEnabled(enabled), setRemoteTools(enabled);
           } })
+        )
+      ), acpSetting = React.createElement(
+        "details",
+        { className: "dshRemoteAuthorizationSetting dshRemoteAcpSetting" },
+        React.createElement(
+          "summary",
+          null,
+          React.createElement(
+            "div",
+            { className: "dshRemoteAcpSummaryText" },
+            React.createElement("strong", null, t("agentBackends")),
+            React.createElement("p", null, t("acpHint"), React.createElement("a", {
+              href: "https://github.com/liguobao/ds-harness-remote/blob/feat/cursor-remote/docs/acp-remote.md",
+              target: "_blank",
+              rel: "noopener noreferrer",
+              onClick: (event) => event.stopPropagation()
+            }, t("acpDocumentation")))
+          )
+        ),
+        React.createElement(
+          "div",
+          { className: "dshRemoteAcpList" },
+          acpBackends.map((item) => React.createElement(
+            "div",
+            { key: item.id, className: "dshRemoteAuthorizationSetting" },
+            React.createElement("div", null, React.createElement("strong", null, item.id === "codex" ? "CodeX" : item.id === "cursor" ? "Cursor" : item.id === "antigravity" ? "AGY" : item.id === "claude" ? "Claude" : item.id === "pi" ? "Pi" : item.id === "opencode" ? "OpenCode" : item.id), null),
+            React.createElement(
+              "span",
+              { className: "dshRemoteAcpCheckCell" },
+              React.createElement(
+                "a",
+                { href: `#check-acp-${item.id}`, className: `dshRemoteAcpCheckLink${acpChecking[item.id] ? " isChecking" : acpCheckResults[item.id] === void 0 ? "" : acpCheckResults[item.id] ? " isPassed" : " isFailed"}`, onClick: (event) => {
+                  event.preventDefault(), checkAcp(item.id);
+                } },
+                acpChecking[item.id] ? t("checkingAcp") : acpCheckResults[item.id] === void 0 ? t("checkAcp") : t(acpCheckResults[item.id] ? "acpCheckPassed" : "acpCheckFailed")
+              )
+            ),
+            ["codex", "cursor", "antigravity", "pi", "claude", "opencode"].includes(item.id) ? null : React.createElement("a", { href: `#remove-acp-${item.id}`, className: "dshRemoteAcpRemoveLink", onClick: (event) => {
+              event.preventDefault(), removeAcp(item.id);
+            } }, t("removeAcp")),
+            React.createElement("input", {
+              type: "checkbox",
+              role: "switch",
+              checked: settingsView?.config.acp?.enabled === !0 && item.enabled && acpAvailability[item.id] === !0,
+              "aria-label": item.id,
+              disabled: busy || !writable || acpChecking[item.id] === !0 || acpAvailability[item.id] !== !0,
+              onChange: (event) => void props.control("settings.acp.set", { backend: item.id, enabled: event.target.checked }).then((view) => {
+                applyView(view), setAcpBackends((view.config.acp?.backends ?? []).map((v) => ({ id: v.id, enabled: v.enabled !== !1 })));
+              }).catch((reason) => setError(messageOf(reason)))
+            })
+          ))
         )
       );
       return props.view === "summary" ? React.createElement("span", null, t("pluginDescription")) : React.createElement(
@@ -2788,6 +2863,7 @@ Minimum version required to store current data is: ` + bestVersion + `.
               )
             ),
             developmentSetting,
+            acpSetting,
             React.createElement(
               "div",
               { className: "dshRemoteAuthorizationSetting" },
@@ -2867,6 +2943,7 @@ Minimum version required to store current data is: ` + bestVersion + `.
               )
             ),
             developmentSetting,
+            acpSetting,
             React.createElement(
               "div",
               { className: "dshRemoteSettingsSignIn" },
