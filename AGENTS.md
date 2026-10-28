@@ -159,7 +159,7 @@ macOS 仍使用普通用户，优先复用 Desktop 官方 launcher，否则已�
 Desktop 默认保留的 `desktop` profile，只能由其官方 launcher 管理。一次性 Token 复用官方身份/凭据与既有注册码接口，
 不得记录或作为持久设备凭据使用。Windows 用户使用官方插件管理或已有 Harness 的官方命令。
 卸载先按安装指南停用 Linux 系统服务，再通过官方插件管理或 `dsh plugin remove` 移除 Remote；不自动删除 runtime、
-凭据或迁移旧 service。当前待发布版本为 `0.5.21`，Android `versionCode` / Expo iOS `buildNumber` 为 `66`；发版准备已将安装说明同步到 `ds-harness-remote@0.5.21`，Tag、npm 与 GitHub Release 的发布状态以实际发布结果为准。
+凭据或迁移旧 service。当前待发布版本为 `0.5.23`，Android `versionCode` / Expo iOS `buildNumber` 为 `68`；发版准备已将安装说明同步到 `ds-harness-remote@0.5.23`，Tag、npm 与 GitHub Release 的发布状态以实际发布结果为准。
 
 ## Validation Baseline
 

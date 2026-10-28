@@ -40,7 +40,7 @@ DS Harness Remote 只是通往这个工作环境的另一个窗口。
 
 已支持 DeepSeek Harness 桌面版，使用最新版本安装即可：
 
-`ds-harness-remote@0.5.22`
+`ds-harness-remote@0.5.23`
 
 
 ## 主要特性
@@ -81,7 +81,7 @@ DS Harness Remote 只是通往这个工作环境的另一个窗口。
 
 | 客户端 | 形态 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| DSH&nbsp;Desktop&nbsp;插件 | Remote 侧栏 | 已支持 | 装 `ds-harness-remote@0.5.22`；Host 也可以就是这台电脑 |
+| DSH&nbsp;Desktop&nbsp;插件 | Remote 侧栏 | 已支持 | 装 `ds-harness-remote@0.5.23`；Host 也可以就是这台电脑 |
 | Web | 浏览器页面 | 已支持 | 打开 [https://dsh.r2049.cn](https://dsh.r2049.cn)，复用 Harness 原生界面 |
 | Android | 原生 App | 已支持 | 从 [Releases](https://github.com/liguobao/ds-harness-remote/releases/latest) 下载 APK，见 [Android 说明](apps/android/README.md) |
 | iOS | TestFlight 内测 | 内测 | 未公开上架，入口见 [issue #20](https://github.com/liguobao/ds-harness-remote/issues/20) |
@@ -96,10 +96,10 @@ DS Harness Remote 只是通往这个工作环境的另一个窗口。
 
 在 DeepSeek Harness Desktop 的 **扩展 / 插件管理** 中，选择从 **npm** 安装，输入包名和版本：
 
-`ds-harness-remote@0.5.22`
+`ds-harness-remote@0.5.23`
 
 安装后重启 Desktop。也可使用它的官方 `dsh` 启动器安装固定版本：
-`dsh plugin --profile desktop add -w ds-harness-remote@0.5.22`。
+`dsh plugin --profile desktop add -w ds-harness-remote@0.5.23`。
 
 ### dsh-TUI Host
 
@@ -111,7 +111,7 @@ DS Harness Remote 只是通往这个工作环境的另一个窗口。
 通过 DSH 插件管理命令，将确切版本加入 `web` profile：
 
 ```sh
-dsh plugin --profile web add -w ds-harness-remote@0.5.22
+dsh plugin --profile web add -w ds-harness-remote@0.5.23
 ```
 
 安装后请重启 DeepSeek Harness。

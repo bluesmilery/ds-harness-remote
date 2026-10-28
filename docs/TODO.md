@@ -1,6 +1,6 @@
 # TODO
 
-更新日期：2026-10-27。当前源码版本为 `0.5.21`，Android `versionCode 66`，Expo iOS `buildNumber 66`；Tag、npm 与 GitHub Release 状态以实际发布结果为准。
+更新日期：2026-10-29。当前源码版本为 `0.5.23`，Android `versionCode 68`，Expo iOS `buildNumber 68`；Tag、npm 与 GitHub Release 状态以实际发布结果为准。
 
 最近一次构建验证见 [AGENTS.md 的 0.5.20 合并后重建记录](../AGENTS.md#post-merge-0520-rebuild-2026-10-27)：全仓 check、847 tests、串行生产 build（含 Android Hermes）、DSH bundle 与打包检查通过。这是既有验证记录，本轮文档清理未重新运行；未新增 APK、原生真机或跨设备验收。Metro noble/hashes exports fallback 警告仍保留。
 

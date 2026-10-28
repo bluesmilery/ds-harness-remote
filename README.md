@@ -39,7 +39,7 @@ DS Harness Remote is simply another window into that environment.
 
 The DeepSeek Harness desktop edition is supported. Install the latest release:
 
-`ds-harness-remote@0.5.22`
+`ds-harness-remote@0.5.23`
 
 ## Features
 
@@ -79,7 +79,7 @@ The DeepSeek Harness desktop edition is supported. Install the latest release:
 
 | Client | Form | Status | Notes |
 | --- | --- | --- | --- |
-| DSH&nbsp;Desktop&nbsp;plugin | Remote sidebar | Supported | Install `ds-harness-remote@0.5.22`; this computer can also be the Host |
+| DSH&nbsp;Desktop&nbsp;plugin | Remote sidebar | Supported | Install `ds-harness-remote@0.5.23`; this computer can also be the Host |
 | Web | Browser page | Supported | Open [https://dsh.r2049.cn](https://dsh.r2049.cn); reuses the native Harness interface |
 | Android | Native app | Supported | Download the APK from [Releases](https://github.com/liguobao/ds-harness-remote/releases/latest); see the [Android guide](apps/android/README.md) |
 | iOS | TestFlight beta | Beta | Not publicly released; see [issue #20](https://github.com/liguobao/ds-harness-remote/issues/20) |
@@ -95,10 +95,10 @@ Several clients can connect to the same Host at once; RPC calls and streams are 
 Open **Extensions / Plugin management** in DeepSeek Harness Desktop, choose installation
 from npm, and enter this package:
 
-`ds-harness-remote@0.5.22`
+`ds-harness-remote@0.5.23`
 
 Restart Desktop afterward. Its official `dsh` launcher can also install the pinned package
-with `dsh plugin --profile desktop add -w ds-harness-remote@0.5.22`.
+with `dsh plugin --profile desktop add -w ds-harness-remote@0.5.23`.
 
 ### dsh-TUI Host
 
@@ -110,7 +110,7 @@ For terminal Host setup with [dsh-TUI](https://github.com/ccch1mneyyy/dsh-TUI), 
 Add the exact package version through DSH's plugin manager for the `web` profile:
 
 ```sh
-dsh plugin --profile web add -w ds-harness-remote@0.5.22
+dsh plugin --profile web add -w ds-harness-remote@0.5.23
 ```
 
 Restart DeepSeek Harness after installation.

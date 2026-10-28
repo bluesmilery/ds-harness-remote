@@ -1,3 +1,21 @@
+## 0.5.23 — 2026-10-29
+
+Android build 68.
+
+### English
+
+- Refresh Remote settings copy across supported languages to describe encrypted P2P access to DeepSeek Harness, Codex, Claude Code, and Pi workspaces on desktop, web, iOS, and Android.
+- Simplify the Remote settings layout by removing the unused Server address field and keeping account authorization details together.
+- Fix Remote panel refresh and close actions being blocked by the draggable panel header.
+- Keep ACP settings available while removing the unused add-workspace entry from the Remote settings flow.
+
+### 中文
+
+- 更新所有支持语言的 Remote 设置文案，说明通过端到端加密的 P2P 网络访问 DeepSeek Harness、CodeX、Claude Code 和 Pi 工作区，并支持桌面、网页、iOS 与 Android 客户端。
+- 简化 Remote 设置布局，移除不再需要的 Server 地址字段，并将账号授权说明与账号值放在同一行。
+- 修复 Remote 面板弹出后刷新和关闭按钮有时无法点击的问题。
+- 保留 ACP 设置入口，移除 Remote 设置流程中不再使用的新增工作区入口。
+
 ## 0.5.22 — 2026-10-28
 
 Android build 67.
