@@ -46,12 +46,42 @@ import { PLUGIN_VERSION } from './version.js'
 
 interface WebSocketLike {
   readonly readyState: number
+  binaryType?: string
   onopen: ((event: unknown) => void) | null
   onmessage: ((event: { data: unknown }) => void) | null
   onerror: ((event: unknown) => void) | null
   onclose: ((event: { code: number; reason: string }) => void) | null
   send(data: string): void
   close(code?: number, reason?: string): void
+}
+
+type RelayAssignment = Pick<ConnectIncomingPayload, 'relayEndpoint' | 'relayTicket' | 'relayNodeId' | 'relayEpoch'>
+
+function relayDataFrame(type: string, payload: Record<string, unknown>): string {
+  return JSON.stringify({
+    v: PROTOCOL_VERSION,
+    id: typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random()}`,
+    type,
+    timestamp: Date.now(),
+    payload,
+  })
+}
+
+function parseRelayDataFrame(raw: unknown): { type: string; payload: Record<string, unknown> } {
+  if (typeof raw !== 'string') throw new ControlConnectionError('INVALID_MESSAGE', 'Relay data frames must be text JSON.')
+  let value: unknown
+  try { value = JSON.parse(raw) } catch { throw new ControlConnectionError('INVALID_MESSAGE', 'Relay data frame is not valid JSON.') }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new ControlConnectionError('INVALID_MESSAGE', 'Relay data frame must be an object.')
+  }
+  const frame = value as { v?: unknown; type?: unknown; payload?: unknown }
+  if (frame.v !== PROTOCOL_VERSION || typeof frame.type !== 'string'
+    || typeof frame.payload !== 'object' || frame.payload === null || Array.isArray(frame.payload)) {
+    throw new ControlConnectionError('INVALID_MESSAGE', 'Relay data frame is invalid.')
+  }
+  return { type: frame.type, payload: frame.payload as Record<string, unknown> }
 }
 
 export type WebSocketFactory = (url: string) => WebSocketLike
@@ -67,6 +97,9 @@ interface PendingTunnel {
   rtc?: RtcDataChannelTransport
   channel?: ServerNoiseChannel
   pendingHandshake?: SecureHandshakePayload
+  relayAssignment?: RelayAssignment
+  dataSocket?: WebSocketLike
+  dataReady?: boolean
 }
 
 const DEFAULT_WEBRTC_NEGOTIATE_TIMEOUT_MS = 12_000
@@ -210,8 +243,8 @@ export class HostServerConnection {
     const credentials = await this.api.authenticate(this.identity)
     if (this.stopped) return
     const offeredCapabilities = this.rtcFactoryProvider === undefined || this.config.forceRelay
-      ? ['transport.relay', ...this.hostCapabilities()]
-      : ['transport.lan', 'transport.p2p', 'transport.turn', 'transport.relay', ...this.hostCapabilities()]
+      ? ['transport.relay', 'transport.relay.attach', ...this.hostCapabilities()]
+      : ['transport.lan', 'transport.p2p', 'transport.turn', 'transport.relay', 'transport.relay.attach', ...this.hostCapabilities()]
     const socket = this.createWebSocket(websocketUrl(this.api.baseUrl))
     this.socket = socket
     this.controlFrameLimits = {}
@@ -333,7 +366,9 @@ export class HostServerConnection {
       return
     }
     if (frame.type === 'relay') {
-      await this.handleRelay(requireRelay(frame.payload))
+      const payload = requireRelay(frame.payload)
+      if (this.tunnels.get(payload.connectionId)?.dataSocket !== undefined) return
+      await this.handleRelay(payload)
       return
     }
     if (frame.type === 'signal.offer') {
@@ -440,14 +475,18 @@ export class HostServerConnection {
       remotePublicKey: peer.publicKey,
       prologue: createNoisePrologue(payload.connectionId, this.identity.deviceId, peer.deviceId),
     })
-    this.tunnels.set(payload.connectionId, {
+    const tunnel: PendingTunnel = {
       connectionId: payload.connectionId,
       membershipId: descriptor.membershipId,
       peer,
       preferredTransports: payload.preferredTransports,
       noise,
       transport: 'negotiating',
-    })
+      ...(typeof payload.relayEndpoint === 'string' && typeof payload.relayTicket === 'string'
+        ? { relayAssignment: payload as RelayAssignment }
+        : {}),
+    }
+    this.tunnels.set(payload.connectionId, tunnel)
     this.sendControl('connect.accepted', { connectionId: payload.connectionId })
   }
 
@@ -470,7 +509,7 @@ export class HostServerConnection {
     if (tunnel === undefined || payload.targetDeviceId !== this.identity.deviceId || payload.step !== 1) {
       throw new ControlConnectionError('SECURE_CHANNEL_FAILED', 'Noise IK handshake is not valid for this connection.')
     }
-    if (tunnel.transport === 'negotiating' && tunnel.rtc !== undefined) {
+    if (tunnel.transport === 'negotiating' && (tunnel.rtc !== undefined || tunnel.relayAssignment !== undefined)) {
       // transport.selected and secure.handshake traverse the Server control
       // plane separately. Do not guess Relay if forwarding or the responder's
       // RTC-ready callback delivers the handshake first; resume as soon as
@@ -660,6 +699,25 @@ export class HostServerConnection {
       tunnel.transport = 'relay'
       tunnel.transportMode = undefined
       await rtc?.close()
+      if (tunnel.relayAssignment !== undefined) {
+        try {
+          await this.openDataSocket(tunnel)
+        } catch (error) {
+          this.logger.warn('relay data attach failed', {
+            connectionId: shortId(tunnel.connectionId),
+            peerDeviceId: shortId(tunnel.peer.deviceId),
+            reason: diagnosticReason(error),
+          })
+          await this.dropTunnel(tunnel.connectionId, 'CONNECTION_FAILED')
+          this.sendControl('error', {
+            code: 'CONNECTION_FAILED',
+            message: 'Relay data connection failed.',
+            retryable: true,
+            connectionId: tunnel.connectionId,
+          })
+          return
+        }
+      }
       await this.resumePendingHandshake(tunnel)
       return
     }
@@ -793,9 +851,21 @@ export class HostServerConnection {
   private async sendRelay(tunnel: PendingTunnel, ciphertext: Uint8Array): Promise<void> {
     const counter = Number(tunnel.noise.sendingCounter() - 1n)
     if (!Number.isSafeInteger(counter) || counter < 0) throw new ControlConnectionError('FRAME_TOO_LARGE', 'Noise transport counter overflowed.')
-    const socket = this.socket
+    const socket = tunnel.dataSocket ?? this.socket
     if (socket === undefined) throw new Error('Relay transport closed')
     await waitForRelayCapacity(socket)
+    if (tunnel.dataSocket !== undefined) {
+      if (tunnel.dataSocket !== socket || tunnel.dataSocket.readyState !== 1 || !tunnel.dataReady) {
+        throw new Error('Relay data transport is not ready')
+      }
+      socket.send(relayDataFrame('relay', {
+        connectionId: tunnel.connectionId,
+        targetDeviceId: tunnel.peer.deviceId,
+        counter,
+        ciphertext: toBase64Url(ciphertext),
+      }))
+      return
+    }
     if (this.socket !== socket) throw new Error('Relay transport replaced')
     this.sendControl('relay', {
       connectionId: tunnel.connectionId,
@@ -803,6 +873,82 @@ export class HostServerConnection {
       counter,
       ciphertext: toBase64Url(ciphertext),
     } satisfies RelayPayload)
+  }
+
+  private async openDataSocket(tunnel: PendingTunnel): Promise<void> {
+    const assignment = tunnel.relayAssignment
+    if (assignment === undefined || tunnel.dataSocket !== undefined) return
+    if (typeof assignment.relayEndpoint !== 'string' || typeof assignment.relayTicket !== 'string') return
+    const socket = this.createWebSocket(assignment.relayEndpoint)
+    socket.binaryType = 'arraybuffer'
+    tunnel.dataSocket = socket
+    await new Promise<void>((resolve, reject) => {
+      let settled = false
+      const timer = setTimeout(() => finish(new Error('Relay data attach timed out')), 15_000)
+      const finish = (error?: Error): void => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        if (error === undefined) resolve()
+        else reject(error)
+      }
+      socket.onopen = () => {
+        try {
+          socket.send(relayDataFrame('relay.attach', {
+            connectionId: tunnel.connectionId,
+            deviceId: this.identity.deviceId,
+            peerDeviceId: tunnel.peer.deviceId,
+            ticket: assignment.relayTicket,
+          }))
+        } catch (error) {
+          finish(asError(error))
+        }
+      }
+      socket.onmessage = event => {
+        try {
+          const frame = parseRelayDataFrame(event.data)
+          if (frame.type === 'relay.ready') {
+            if (frame.payload.connectionId !== tunnel.connectionId
+              || (assignment.relayEpoch !== undefined && frame.payload.epoch !== assignment.relayEpoch)) {
+              throw new ControlConnectionError('INVALID_MESSAGE', 'Relay data attach does not match the assigned connection.')
+            }
+            tunnel.dataReady = true
+            finish()
+            return
+          }
+          void this.handleDataSocketFrame(tunnel, frame.type, frame.payload).catch(error => {
+            finish(asError(error))
+            void this.dropTunnel(tunnel.connectionId, 'CONNECTION_FAILED')
+          })
+        } catch (error) {
+          finish(asError(error))
+          void this.dropTunnel(tunnel.connectionId, 'CONNECTION_FAILED')
+        }
+      }
+      socket.onerror = () => finish(new Error('Relay data socket failed'))
+      socket.onclose = () => {
+        if (!tunnel.dataReady) finish(new Error('Relay data socket closed before attach'))
+        else void this.dropTunnel(tunnel.connectionId, 'CONNECTION_FAILED')
+      }
+    })
+  }
+
+  private async handleDataSocketFrame(
+    tunnel: PendingTunnel,
+    type: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    if (this.tunnels.get(tunnel.connectionId) !== tunnel) return
+    if (type === 'relay.detach') {
+      await this.dropTunnel(tunnel.connectionId, 'CONNECTION_FAILED')
+      return
+    }
+    if (type === 'ping') {
+      if (tunnel.dataSocket?.readyState === 1) tunnel.dataSocket.send(relayDataFrame('pong', payload))
+      return
+    }
+    if (type !== 'relay') throw new ControlConnectionError('INVALID_MESSAGE', `Unexpected Relay data frame: ${type}`)
+    await this.handleRelay(requireRelay(payload))
   }
 
   private sendControl(type: Parameters<typeof createControlFrame>[0], payload: unknown): void {
@@ -816,6 +962,7 @@ export class HostServerConnection {
     this.tunnels.clear()
     await Promise.all(tunnels.map(async tunnel => {
       if (tunnel.rtc !== undefined) await tunnel.rtc.close()
+      tunnel.dataSocket?.close()
       if (tunnel.channel !== undefined) await tunnel.channel.close()
       else tunnel.noise.destroy()
     }))
@@ -838,6 +985,9 @@ export class HostServerConnection {
         reason: diagnosticReason(error),
       })
     }
+    tunnel.dataSocket?.close()
+    tunnel.dataSocket = undefined
+    tunnel.dataReady = false
     if (tunnel.channel !== undefined) {
       try {
         const closed = detail === undefined

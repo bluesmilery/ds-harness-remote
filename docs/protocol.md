@@ -487,10 +487,19 @@ Server 校验 membership、双方账号归属一致且 Host online 后创建 `co
     "clientDeviceId": "01KCLIENT...",
     "clientIdentityKey": "...",
     "authorization": "account",
-    "preferredTransports": ["lan", "p2p", "turn", "relay"]
+    "preferredTransports": ["lan", "p2p", "turn", "relay"],
+    "relayEndpoint": "wss://relay.example/ws",
+    "relayTicket": "dshrt.<payload>.<signature>",
+    "relayNodeId": "relay-bj-1",
+    "relayEpoch": 7
   }
 }
 ```
+
+当双方声明 `transport.relay.attach` 且 Server 选择独立 Relay 时，`connect.accepted` 同样
+携带 `relayEndpoint`、节点绑定的短期 `relayTicket`、`relayNodeId` 和 `relayEpoch`。Host 和
+Client 必须分别使用自己收到的 ticket 连接该 endpoint；ticket 不能发送到 Control WebSocket
+或复用到另一条 connection。缺少这些字段时，双方继续使用旧的 Control WebSocket Relay 兼容路径。
 
 WebRTC DataChannel 建立后，Initiator 必须先发送 `transport.selected`，再开始 Noise
 握手。Host 必须按同一 Control WebSocket 上的消息顺序，在创建 authenticated channel 前应用该
@@ -564,7 +573,9 @@ Server 只校验 connection ownership、step 上限和 frame size，不解析 No
 
 ### 12.3 Transport frames
 
-Noise handshake 完成后，Remote message JSON 作为 Noise transport plaintext。Relay 时 Noise ciphertext 放入 `relay` control frame；WebRTC 时直接发送 binary ciphertext。
+Noise handshake 完成后，Remote message JSON 作为 Noise transport plaintext。独立 Relay 时
+Noise ciphertext 放入 data WebSocket 的 `relay` frame；没有 attach 能力的旧客户端继续放入
+`relay` control frame；WebRTC 时直接发送 binary ciphertext。
 
 Noise transport 单消息最大为 65,535 bytes（包含 AEAD tag）。编码后的 Remote message
 超过 48 KiB 时，发送方必须先切成 DSH secure fragments，再逐片 Noise 加密。fragment
@@ -605,6 +616,28 @@ TLS/WSS 保护到 Server 的链路，但不能替代本节 E2EE。
 `ciphertext` 必须是规范的无 padding Base64URL。
 
 Server 禁止解密、解析、缓存到数据库或记录 `ciphertext`。
+
+独立 Relay data WebSocket 使用同样的 v1 envelope，但连接建立后的第一帧必须是：
+
+```json
+{
+  "v": 1,
+  "id": "01K...",
+  "type": "relay.attach",
+  "timestamp": 1786000000000,
+  "payload": {
+    "connectionId": "01KCONN...",
+    "deviceId": "01KDEVICE...",
+    "peerDeviceId": "01KPEER...",
+    "ticket": "dshrt.<payload>.<signature>"
+  }
+}
+```
+
+Relay node 验证 ticket 的签名、`aud`、`nodeId`、`connectionId`、设备对、`epoch` 和有效期，
+并确保每个设备端在同一 connection 只有一个 active attach。成功后返回 `relay.ready`；之后
+只接受目标匹配的 `relay` frame 和心跳。任一端断开时，另一端收到 `relay.detach`，必须关闭
+当前 Noise connection 并重新建立完整的 connection，不能继续复用旧的 Noise 状态。
 
 ## 14. WebRTC Signaling
 

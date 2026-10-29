@@ -12,6 +12,7 @@ import {
 class FakeWebSocket {
   static readonly OPEN = 1
   static latest?: FakeWebSocket
+  static instances: FakeWebSocket[] = []
   readyState = 0
   binaryType = ''
   sent: string[] = []
@@ -22,6 +23,7 @@ class FakeWebSocket {
 
   constructor(readonly url: string) {
     FakeWebSocket.latest = this
+    FakeWebSocket.instances.push(this)
   }
 
   open(): void {
@@ -51,10 +53,44 @@ const cleanupScenario1 = () => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   FakeWebSocket.latest = undefined
+  FakeWebSocket.instances = []
 }
 afterEach(cleanupScenario1)
 
 describe('RelayTransport control handshake', () => {
+  it('attaches an independent data socket when the Server assigns one', async () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const transport = new RelayTransport('wss://remote.example/ws/v1/connect', {
+      role: 'client', deviceId: 'client-1', accessToken: 'access-token', targetDeviceId: 'host-1',
+    })
+    const connecting = transport.connect()
+    const control = FakeWebSocket.latest!
+    control.open()
+    control.receive(helloAck({ capabilities: ['transport.relay', 'transport.relay.attach'] }))
+    await Promise.resolve()
+    control.receive(createControlFrame('connect.accepted', {
+      connectionId: 'connection-1',
+      relayEndpoint: 'wss://relay.example/ws',
+      relayTicket: 'dshrt.payload.signature',
+      relayNodeId: 'relay-1',
+      relayEpoch: 4,
+    }))
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(2))
+    const data = FakeWebSocket.instances[1]!
+    data.open()
+    expect(JSON.parse(data.sent[0]!)).toMatchObject({
+      type: 'relay.attach',
+      payload: { connectionId: 'connection-1', deviceId: 'client-1', peerDeviceId: 'host-1', ticket: 'dshrt.payload.signature' },
+    })
+    data.receive({ v: 1, id: 'ready', type: 'relay.ready', timestamp: Date.now(), payload: { connectionId: 'connection-1', epoch: 4 } })
+    await connecting
+    await transport.sendHandshake(1, new Uint8Array([1, 2, 3]))
+    await transport.send(new TextEncoder().encode('encrypted-frame'))
+    expect(control.sent.filter(frame => JSON.parse(frame).type === 'secure.handshake')).toHaveLength(1)
+    expect(JSON.parse(data.sent[1]!)).toMatchObject({ type: 'relay', payload: { connectionId: 'connection-1', targetDeviceId: 'host-1', counter: 0 } })
+    expect(control.sent.filter(frame => JSON.parse(frame).type === 'relay')).toHaveLength(0)
+  })
+
   it('waits for authorization and sends canonical relay frames', async () => {
     vi.stubGlobal('WebSocket', FakeWebSocket)
     const transport = new RelayTransport('wss://remote.example/ws/v1/connect', {
@@ -181,6 +217,34 @@ describe('RelayTransport control handshake', () => {
 })
 
 describe('AdaptiveTransport capability negotiation', () => {
+  it('moves Relay ciphertext to the assigned data socket while keeping handshake on control', async () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const transport = createAdaptiveTransport({ forceRelay: true })
+    const connecting = transport.connect()
+    const control = FakeWebSocket.latest!
+    control.open()
+    control.receive(helloAck({ capabilities: ['transport.relay', 'transport.relay.attach'] }))
+    await Promise.resolve()
+    control.receive(createControlFrame('connect.accepted', {
+      connectionId: 'connection-1',
+      relayEndpoint: 'wss://relay.example/ws',
+      relayTicket: 'dshrt.payload.signature',
+      relayNodeId: 'relay-1',
+      relayEpoch: 4,
+    }))
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(2))
+    const data = FakeWebSocket.instances[1]!
+    data.open()
+    expect(JSON.parse(data.sent[0]!)).toMatchObject({ type: 'relay.attach', payload: { connectionId: 'connection-1' } })
+    data.receive({ v: 1, id: 'ready', type: 'relay.ready', timestamp: Date.now(), payload: { connectionId: 'connection-1', epoch: 4 } })
+    await connecting
+    await transport.sendHandshake(1, new Uint8Array([7]))
+    await transport.send(new Uint8Array([8, 9]))
+    expect(lastSentPayload(control, 'secure.handshake')).toMatchObject({ connectionId: 'connection-1' })
+    expect(JSON.parse(data.sent[1]!)).toMatchObject({ type: 'relay', payload: { connectionId: 'connection-1', counter: 0 } })
+    expect(lastSentPayload(control, 'transport.selected')).toMatchObject({ transport: 'relay' })
+  })
+
   it('closes an established WebRTC data channel when the Control socket closes', async () => {
     vi.stubGlobal('WebSocket', FakeWebSocket)
     const rtc = stalledRtc()

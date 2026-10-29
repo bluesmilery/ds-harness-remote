@@ -347,10 +347,20 @@ export interface ConnectIncomingPayload {
   clientIdentityKey: string
   authorization: 'account'
   preferredTransports: Array<'lan' | 'p2p' | 'turn' | 'relay'>
+  /** Optional independent Relay data-plane assignment. */
+  relayEndpoint?: string
+  relayTicket?: string
+  relayNodeId?: string
+  relayEpoch?: number
 }
 
 export interface ConnectAcceptedPayload {
   connectionId: string
+  /** Optional independent Relay data-plane assignment. */
+  relayEndpoint?: string
+  relayTicket?: string
+  relayNodeId?: string
+  relayEpoch?: number
 }
 
 export interface ConnectRejectedPayload {
@@ -1016,10 +1026,18 @@ export const connectIncomingPayloadSchema = z.object({
   clientIdentityKey: identityKeySchema,
   authorization: z.literal('account'),
   preferredTransports: z.array(transportEnum).min(1).max(MAX_PREFERRED_TRANSPORT_ENTRIES),
+  relayEndpoint: z.string().url().optional(),
+  relayTicket: z.string().min(1).optional(),
+  relayNodeId: z.string().min(1).optional(),
+  relayEpoch: z.number().int().nonnegative().optional(),
 })
 
 export const connectAcceptedPayloadSchema = z.object({
   connectionId: z.string().min(1),
+  relayEndpoint: z.string().url().optional(),
+  relayTicket: z.string().min(1).optional(),
+  relayNodeId: z.string().min(1).optional(),
+  relayEpoch: z.number().int().nonnegative().optional(),
 })
 
 export const connectRejectedPayloadSchema = z.object({

@@ -27,6 +27,30 @@ import {
 import { BaseTransport } from './transport.js'
 import { fromBase64Url, toBase64Url } from './util.js'
 
+type RelayAssignment = Pick<ConnectAcceptedPayload, 'relayEndpoint' | 'relayTicket' | 'relayNodeId' | 'relayEpoch'>
+
+function relayDataFrame(type: string, payload: Record<string, unknown>): string {
+  return JSON.stringify({
+    v: PROTOCOL_VERSION,
+    id: typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random()}`,
+    type,
+    timestamp: Date.now(),
+    payload,
+  })
+}
+
+function parseRelayDataFrame(raw: string | ArrayBuffer | Blob): { type: string; payload: Record<string, unknown> } {
+  if (typeof raw !== 'string') throw new Error('Relay data frames must be text JSON')
+  const frame = JSON.parse(raw) as { v?: unknown; type?: unknown; payload?: unknown }
+  if (frame.v !== PROTOCOL_VERSION || typeof frame.type !== 'string'
+    || typeof frame.payload !== 'object' || frame.payload === null || Array.isArray(frame.payload)) {
+    throw new Error('Invalid Relay data frame')
+  }
+  return { type: frame.type, payload: frame.payload as Record<string, unknown> }
+}
+
 export interface AdaptiveTransportOptions {
   role: 'client'
   deviceId: string
@@ -67,7 +91,7 @@ export interface AdaptiveConnectionDetails {
   webRtc?: RtcConnectionDetails
 }
 
-const DEFAULT_CAPABILITIES = ['transport.lan', 'transport.p2p', 'transport.turn', 'transport.relay', 'harness.api.v1']
+const DEFAULT_CAPABILITIES = ['transport.lan', 'transport.p2p', 'transport.turn', 'transport.relay', 'transport.relay.attach', 'harness.api.v1']
 const DEFAULT_PREFERRED_TRANSPORTS = ['lan', 'p2p', 'turn', 'relay'] as const
 
 /**
@@ -83,6 +107,7 @@ const DEFAULT_PREFERRED_TRANSPORTS = ['lan', 'p2p', 'turn', 'relay'] as const
 export class AdaptiveTransport extends BaseTransport {
   private readonly handshakeHandlers = new Set<(step: number, data: Uint8Array) => void>()
   private socket?: WebSocket
+  private dataSocket?: WebSocket
   private connectionId?: string
   private relayCounter = 0
   private bytesSent = 0
@@ -104,6 +129,8 @@ export class AdaptiveTransport extends BaseTransport {
   private lastControlReceivedAt?: number
   private lastControlSentAt?: number
   private lastRtcDiagnostics?: RtcConnectionDiagnostics
+  private relayAssignment?: RelayAssignment
+  private dataReady = false
 
   constructor(
     private readonly url: string,
@@ -166,14 +193,17 @@ export class AdaptiveTransport extends BaseTransport {
       await rtc.send(data)
       return
     }
-    if (this.socket?.readyState !== WebSocket.OPEN) throw new Error('adaptive transport is not connected')
-    await waitForRelayCapacity(this.socket)
-    this.sendControl('relay', {
+    const socket = this.dataSocket ?? this.socket
+    if (socket?.readyState !== WebSocket.OPEN) throw new Error('adaptive transport is not connected')
+    await waitForRelayCapacity(socket)
+    const payload = {
       connectionId: this.connectionId,
       targetDeviceId: this.options.targetDeviceId,
       counter: this.relayCounter,
       ciphertext: toBase64Url(data),
-    } satisfies RelayPayload)
+    } satisfies RelayPayload
+    if (this.dataSocket !== undefined) this.dataSocket.send(relayDataFrame('relay', payload))
+    else this.sendControl('relay', payload)
     this.bytesSent += data.byteLength
     this.relayCounter += 1
   }
@@ -279,6 +309,10 @@ export class AdaptiveTransport extends BaseTransport {
           throw new Error('connect.accepted did not include a connectionId')
         }
         this.connectionId = payload.connectionId
+        const assignment = payload as RelayAssignment
+        if (typeof assignment.relayEndpoint === 'string' && typeof assignment.relayTicket === 'string') {
+          this.relayAssignment = assignment
+        }
         this.clearHandshake()
         void this.negotiate(lifetime.signal).catch(error => {
           if (this.lifetime === lifetime) this.failConnection(error instanceof Error ? error : new Error('Adaptive transport negotiation failed'))
@@ -291,6 +325,7 @@ export class AdaptiveTransport extends BaseTransport {
         throw Object.assign(new Error(message), { code: payload.code, retryable: payload.retryable })
       }
       if (frame.type === 'relay') {
+        if (this.dataSocket !== undefined) return
         if (this.dataMode !== 'relay') return
         this.handleRelay(frame.payload as Partial<RelayPayload>)
         return
@@ -386,6 +421,9 @@ export class AdaptiveTransport extends BaseTransport {
       selected = 'relay'
     }
     this.selected = selected
+    if (selected === 'relay' && this.relayAssignment !== undefined) {
+      await this.openDataSocket(this.relayAssignment)
+    }
     const turnNode = selected === 'turn' ? this.rtc?.selectedRelayUrl() : undefined
     this.sendControl('transport.selected', {
       connectionId: this.connectionId,
@@ -519,6 +557,85 @@ export class AdaptiveTransport extends BaseTransport {
     }
   }
 
+  private async openDataSocket(assignment: RelayAssignment): Promise<void> {
+    if (this.connectionId === undefined || this.dataSocket !== undefined) return
+    const socket = new WebSocket(assignment.relayEndpoint!)
+    socket.binaryType = 'arraybuffer'
+    this.dataSocket = socket
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error('Relay data attach timed out'))
+        socket.close()
+      }, this.options.handshakeTimeoutMs ?? 15_000)
+      socket.onopen = () => socket.send(relayDataFrame('relay.attach', {
+        connectionId: this.connectionId,
+        deviceId: this.options.deviceId,
+        peerDeviceId: this.options.targetDeviceId,
+        ticket: assignment.relayTicket,
+      }))
+      socket.onmessage = event => {
+        try {
+          const data = parseRelayDataFrame(event.data)
+          if (data.type === 'relay.ready') {
+            if (data.payload.connectionId !== this.connectionId
+              || (assignment.relayEpoch !== undefined && data.payload.epoch !== assignment.relayEpoch)) {
+              throw new Error('Relay data attach assignment mismatch')
+            }
+            clearTimeout(timer)
+            this.dataReady = true
+            resolve()
+            return
+          }
+          void this.handleDataSocketFrame(data.type, data.payload).catch(error => {
+            this.failConnection(error instanceof Error ? error : new Error('Invalid Relay data frame'))
+          })
+        } catch (error) {
+          clearTimeout(timer)
+          reject(error instanceof Error ? error : new Error('Invalid Relay data frame'))
+          this.failConnection(error instanceof Error ? error : new Error('Invalid Relay data frame'))
+        }
+      }
+      socket.onerror = () => {
+        clearTimeout(timer)
+        reject(new Error('Relay data socket failed'))
+      }
+      socket.onclose = () => {
+        clearTimeout(timer)
+        if (!this.dataReady) reject(new Error('Relay data socket closed before attach'))
+        else this.failConnection(new Error('Relay data socket closed'))
+      }
+    })
+  }
+
+  private async handleDataSocketFrame(type: string, payload: Record<string, unknown>): Promise<void> {
+    if (type === 'relay.detach') {
+      this.failConnection(new Error('Relay peer detached'))
+      return
+    }
+    if (type === 'ping') {
+      if (this.dataSocket?.readyState === WebSocket.OPEN) this.dataSocket.send(relayDataFrame('pong', payload))
+      return
+    }
+    if (type === 'relay') {
+      if (payload.connectionId !== this.connectionId || payload.targetDeviceId !== this.options.deviceId
+        || !Number.isSafeInteger(payload.counter) || typeof payload.ciphertext !== 'string') {
+        throw new Error('Received a relay frame for an unknown connection')
+      }
+      const data = fromBase64Url(payload.ciphertext)
+      this.bytesReceived += data.byteLength
+      this.emit(data)
+      return
+    }
+    if (type === 'secure.handshake') {
+      if (payload.connectionId !== this.connectionId || payload.targetDeviceId !== this.options.deviceId
+        || !Number.isSafeInteger(payload.step) || typeof payload.data !== 'string') {
+        throw new Error('Received a secure handshake frame for an unknown connection')
+      }
+      const data = fromBase64Url(payload.data)
+      for (const handler of this.handshakeHandlers) handler(payload.step as number, data)
+    }
+  }
+
   private sendControl(type: Parameters<typeof createControlFrame>[0], payload: unknown): void {
     if (this.socket?.readyState !== WebSocket.OPEN) throw Object.assign(new Error('adaptive control socket is not open'), { code: 'TRANSPORT_CLOSED' })
     this.socket.send(encodeControlFrame(createControlFrame(type, payload), this.controlFrameLimits))
@@ -547,13 +664,18 @@ export class AdaptiveTransport extends BaseTransport {
     this.lifetime = undefined
     const rtc = this.rtc
     const socket = this.socket
+    const dataSocket = this.dataSocket
     this.rtc = undefined
     this.socket = undefined
+    this.dataSocket = undefined
+    this.dataReady = false
+    this.relayAssignment = undefined
     this.connectionId = undefined
     this.connectedAt = undefined
     lifetime?.abort()
     reject?.(error)
     void rtc?.close()
+    dataSocket?.close()
     socket?.close()
     if (established && diagnostic !== undefined) {
       try { this.options.onDisconnect?.(diagnostic) } catch { /* diagnostics must not prevent close */ }

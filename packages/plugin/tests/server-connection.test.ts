@@ -161,7 +161,7 @@ describe('HostServerConnection', () => {
         deviceId: 'host-1',
         clientVersion: PLUGIN_VERSION,
         harnessVersion: '0.1.0-rc.8',
-        capabilities: ['transport.relay', 'harness.api.v1', 'fileviewer.read.v1'],
+        capabilities: ['transport.relay', 'transport.relay.attach', 'harness.api.v1', 'fileviewer.read.v1'],
       },
     })
     socket.receive(createControlFrame('hello.ack', {
@@ -271,6 +271,136 @@ describe('HostServerConnection', () => {
     await flush()
     expect(socket.readyState).toBe(1)
 
+    await server.stop()
+  })
+
+  it('attaches assigned Relay data sockets and keeps ciphertext off control', async () => {
+    const hostKeys = generateKeyPair(new Uint8Array(32).fill(71))
+    const clientKeys = generateKeyPair(new Uint8Array(32).fill(72))
+    const identity: HostIdentity = {
+      schemaVersion: 1,
+      deviceId: 'host-relay',
+      name: 'Host',
+      fingerprint: 'HOST',
+      ...hostKeys,
+    }
+    const peer: TrustedPeer = {
+      deviceId: 'client-relay',
+      name: 'Phone',
+      platform: 'android',
+      publicKey: clientKeys.publicKey,
+      fingerprint: 'CLIENT',
+      trustedAt: 1,
+      membershipId: 'membership-relay',
+    }
+    const control = new FakeWebSocket()
+    const sockets = [control]
+    const createWebSocket = vi.fn((url: string) => {
+      if (url.endsWith('/ws/v1/connect')) return control
+      const socket = new FakeWebSocket()
+      sockets.push(socket)
+      return socket
+    })
+    let accepted: AuthenticatedPeerChannel | undefined
+    const connections = {
+      accept: vi.fn(async (channel: AuthenticatedPeerChannel) => { accepted = channel }),
+      closeConnection: vi.fn(async () => true),
+      close: vi.fn(async () => undefined),
+    } as unknown as ConnectionController
+    const api = {
+      baseUrl: 'https://dsh.r2049.cn',
+      authenticate: vi.fn(async () => ({ accessToken: 'access-token-value' })),
+      deviceFor: vi.fn(async () => ({
+        deviceId: peer.deviceId,
+        name: peer.name,
+        role: 'client',
+        platform: peer.platform,
+        identityKey: peer.publicKey,
+        membershipId: peer.membershipId!,
+      })),
+    } as unknown as HostServerApi
+    const server = new HostServerConnection(
+      { ...config(), forceRelay: true },
+      identity,
+      { trustedPeer: vi.fn(() => undefined), trustPeer: vi.fn(async (input: Omit<TrustedPeer, 'fingerprint' | 'trustedAt'>) => ({ ...input, fingerprint: 'CLIENT', trustedAt: 1 })) } as unknown as IdentityStore,
+      api,
+      connections,
+      logger(),
+      createWebSocket,
+    )
+    server.start()
+    await flush()
+    control.open()
+    control.receive(createControlFrame('hello.ack', { ...helloAck('control-relay'), capabilities: ['transport.relay', 'transport.relay.attach'] }))
+    control.receive(createControlFrame('connect.incoming', {
+      connectionId: 'connection-relay',
+      clientDeviceId: peer.deviceId,
+      clientIdentityKey: peer.publicKey,
+      authorization: 'account',
+      preferredTransports: ['relay'],
+      relayEndpoint: 'wss://relay.example/ws',
+      relayTicket: 'dshrt.host-ticket',
+      relayNodeId: 'relay-1',
+      relayEpoch: 4,
+    }))
+    await flush()
+    expect(JSON.parse(control.sent[1]!)).toMatchObject({ type: 'connect.accepted', payload: { connectionId: 'connection-relay' } })
+    control.receive(createControlFrame('transport.selected', {
+      connectionId: 'connection-relay',
+      targetDeviceId: identity.deviceId,
+      transport: 'relay',
+    }))
+    await flush()
+    expect(sockets).toHaveLength(2)
+    const data = sockets[1]!
+    data.open()
+    expect(JSON.parse(data.sent[0]!)).toMatchObject({
+      type: 'relay.attach',
+      payload: {
+        connectionId: 'connection-relay',
+        deviceId: identity.deviceId,
+        peerDeviceId: peer.deviceId,
+        ticket: 'dshrt.host-ticket',
+      },
+    })
+    data.receive({ v: 1, id: 'ready', type: 'relay.ready', timestamp: Date.now(), payload: { connectionId: 'connection-relay', epoch: 4 } })
+    await flush()
+
+    const clientNoise = new NoiseIkSession({
+      role: 'initiator',
+      localPrivateKey: clientKeys.privateKey,
+      localPublicKey: clientKeys.publicKey,
+      remotePublicKey: hostKeys.publicKey,
+      prologue: createNoisePrologue('connection-relay', identity.deviceId, peer.deviceId),
+    })
+    control.receive(createControlFrame('secure.handshake', {
+      connectionId: 'connection-relay',
+      targetDeviceId: identity.deviceId,
+      step: 1,
+      data: toBase64Url(clientNoise.writeHandshake()),
+    }))
+    await flush()
+    const handshakeReply = JSON.parse(control.sent.find(frame => JSON.parse(frame).type === 'secure.handshake')!)
+    clientNoise.readHandshake(fromBase64UrlForTest(handshakeReply.payload.data))
+    expect(accepted).toBeDefined()
+    const request = createRpcRequest('harness.api.call', { method: 'host.describe', rpcId: 'relay-1', payload: {} })
+    data.receive({
+      v: 1,
+      id: 'relay-in',
+      type: 'relay',
+      timestamp: Date.now(),
+      payload: {
+        connectionId: 'connection-relay',
+        targetDeviceId: identity.deviceId,
+        counter: 0,
+        ciphertext: toBase64Url(clientNoise.encrypt(encodeMessage(request))),
+      },
+    })
+    await flush()
+    await accepted!.send(request)
+    const outgoing = JSON.parse(data.sent[1]!)
+    expect(outgoing).toMatchObject({ type: 'relay', payload: { connectionId: 'connection-relay', targetDeviceId: peer.deviceId, counter: 0 } })
+    expect(control.sent.filter(frame => JSON.parse(frame).type === 'relay')).toHaveLength(0)
     await server.stop()
   })
 
