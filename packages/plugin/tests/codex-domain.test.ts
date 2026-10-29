@@ -58,6 +58,26 @@ describe('CodexRemoteDomain', () => {
     await domain.close()
   })
 
+  it('deduplicates concurrent workspace authority reads without retaining stale roots', async () => {
+    const { root } = await directories()
+    const app = new FakeAppServer(root)
+    const domain = new CodexRemoteDomain({ enabled: true, binary: 'codex' }, logger(), () => app)
+    await domain.start()
+
+    await Promise.all([
+      domain.call('connection-1', { method: 'thread/read', params: { threadId: 'allowed-thread' } }),
+      domain.call('connection-2', { method: 'thread/read', params: { threadId: 'allowed-thread' } }),
+    ])
+    expect(app.calls.filter(call => call.method === 'project/list')).toHaveLength(1)
+    // One authorization read is shared; each caller still receives its own
+    // official thread/read response.
+    expect(app.calls.filter(call => call.method === 'thread/read')).toHaveLength(3)
+
+    await domain.call('connection-1', { method: 'thread/read', params: { threadId: 'allowed-thread' } })
+    expect(app.calls.filter(call => call.method === 'project/list')).toHaveLength(2)
+    await domain.close()
+  })
+
   it('enforces CodeX workspace authority for thread and project operations', async () => {
     await runScenarios(
       [
@@ -709,6 +729,56 @@ describe('CodexRemoteDomain', () => {
         await cleanupScenario1()
       },
     )
+  }, 10000)
+
+  it('reads summary history item pages in parallel while retaining turn order', async () => {
+    const { root } = await directories()
+    const app = new FakeAppServer(root)
+    const original = app.call.bind(app)
+    let activeItemReads = 0
+    let maxActiveItemReads = 0
+    vi.spyOn(app, 'call').mockImplementation(async (method, params) => {
+      if (method === 'thread/turns/list') {
+        if (isRecord(params) && params.itemsView === 'full') {
+          throw new CodexAppServerError('METHOD_NOT_FOUND', 'method not found')
+        }
+        return {
+          data: [1, 2, 3].map(index => ({
+            id: `turn-${index}`,
+            status: 'completed',
+            itemsView: 'summary',
+          })),
+          nextCursor: null,
+        }
+      }
+      if (method === 'thread/items/list') {
+        const turnId = isRecord(params) && typeof params.turnId === 'string' ? params.turnId : 'unknown'
+        activeItemReads += 1
+        maxActiveItemReads = Math.max(maxActiveItemReads, activeItemReads)
+        await new Promise(resolve => setTimeout(resolve, 10))
+        activeItemReads -= 1
+        return {
+          data: [{ item: { id: `item-${turnId}`, type: 'userMessage', text: turnId } }],
+          nextCursor: null,
+        }
+      }
+      return original(method, params)
+    })
+    const domain = new CodexRemoteDomain({ enabled: true, binary: 'codex' }, logger(), () => app)
+    try {
+      await domain.start()
+      const history = await domain.call('connection-1', {
+        method: 'dsh/sessionHistory',
+        params: { threadId: 'allowed-thread' },
+      }) as { records: Array<{ event: { data: unknown } }> }
+      expect(maxActiveItemReads).toBe(3)
+      const text = history.records
+        .map(record => JSON.stringify(record.event.data))
+        .filter(value => value.includes('turn-'))
+      expect(text.join('\n')).toMatch(/turn-1[\s\S]*turn-2[\s\S]*turn-3/)
+    } finally {
+      await domain.close()
+    }
   }, 10000)
 
   it('projects a new unmaterialized Thread as empty history so it can be followed', async () => {

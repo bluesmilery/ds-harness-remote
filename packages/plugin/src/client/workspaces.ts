@@ -353,25 +353,20 @@ export function createRemoteWorkspaceAction(React: ClientReact) {
             const nextWorkspaces = await props.control<RemoteWorkspaceView[]>('workspaces.list', {
               targetDeviceId: host.deviceId,
             })
-            const nextCodexWorkspaces = await props.control<CodexWorkspaceView[]>('codex.workspaces.list', {
-              targetDeviceId: host.deviceId,
-            }).catch(() => [])
-            const nextCursorWorkspaces = await props.control<CursorWorkspaceView[]>('cursor.workspaces.list', {
-              targetDeviceId: host.deviceId,
-            }).catch(() => [])
-            const nextAntigravityWorkspaces = await props.control<CursorWorkspaceView[]>('antigravity.workspaces.list', {
-              targetDeviceId: host.deviceId,
-            }).catch(() => [])
-            const nextPiWorkspaces = await props.control<CursorWorkspaceView[]>('pi.workspaces.list', {
-              targetDeviceId: host.deviceId,
-            }).catch(() => [])
-            const nextOpencodeWorkspaces = await props.control<CursorWorkspaceView[]>('opencode.workspaces.list', {
-              targetDeviceId: host.deviceId,
-            }).catch(() => [])
-            const nextClaudeWorkspaces = await props.control<CursorWorkspaceView[]>('claude.workspaces.list', {
-              targetDeviceId: host.deviceId,
-            }).catch(() => [])
-            const nextStatus = await props.control<RemoteStatus>('status').catch(() => undefined)
+            // The selected Host connection is established by workspaces.list.
+            // Optional backend catalogs are independent reads; running them
+            // together keeps an unavailable or slow ACP backend from delaying
+            // CodeX discovery and the picker transition.
+            const [nextCodexWorkspaces, nextCursorWorkspaces, nextAntigravityWorkspaces,
+              nextPiWorkspaces, nextOpencodeWorkspaces, nextClaudeWorkspaces, nextStatus] = await Promise.all([
+              props.control<CodexWorkspaceView[]>('codex.workspaces.list', { targetDeviceId: host.deviceId }).catch(() => []),
+              props.control<CursorWorkspaceView[]>('cursor.workspaces.list', { targetDeviceId: host.deviceId }).catch(() => []),
+              props.control<CursorWorkspaceView[]>('antigravity.workspaces.list', { targetDeviceId: host.deviceId }).catch(() => []),
+              props.control<CursorWorkspaceView[]>('pi.workspaces.list', { targetDeviceId: host.deviceId }).catch(() => []),
+              props.control<CursorWorkspaceView[]>('opencode.workspaces.list', { targetDeviceId: host.deviceId }).catch(() => []),
+              props.control<CursorWorkspaceView[]>('claude.workspaces.list', { targetDeviceId: host.deviceId }).catch(() => []),
+              props.control<RemoteStatus>('status').catch(() => undefined),
+            ])
             if (nextStatus !== undefined) setStatus(nextStatus)
             return {
               workspaces: nextWorkspaces,

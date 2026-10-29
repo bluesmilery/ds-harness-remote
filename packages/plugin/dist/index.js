@@ -87358,24 +87358,11 @@ async function discoverCodexVirtualWorkspaces(client, signal) {
   return (await loadCatalog(client, signal)).workspaces;
 }
 async function loadCatalog(client, signal, pendingThreads) {
-  let projects = await loadCodexProjects(client, signal);
-  const threads = [];
-  let cursor3;
-  for (let page = 0; page < MAX_CODEX_PAGES; page += 1) {
-    const result = record5(await client.request("thread/list", {
-      limit: CODEX_PAGE_LIMIT,
-      sortKey: "updated_at",
-      sortDirection: "desc",
-      archived: false,
-      ...cursor3 === void 0 ? {} : { cursor: cursor3 }
-    }, signal));
-    for (const value of array3(result.data)) {
-      const thread = record5(value);
-      if (string5(thread.id) !== void 0) threads.push(thread);
-    }
-    cursor3 = typeof result.nextCursor === "string" && result.nextCursor.length > 0 ? result.nextCursor : void 0;
-    if (cursor3 === void 0) break;
-  }
+  const [projectsResult, threads] = await Promise.all([
+    loadCodexProjects(client, signal),
+    loadCodexThreads(client, signal)
+  ]);
+  let projects = projectsResult;
   if (pendingThreads !== void 0) {
     const listedIds = new Set(threads.map((thread) => string5(thread.id)).filter((id6) => id6 !== void 0));
     for (const [threadId, thread] of pendingThreads) {
@@ -87416,6 +87403,26 @@ async function loadCatalog(client, signal, pendingThreads) {
     projects,
     workspaces: projectWorkspaces
   };
+}
+async function loadCodexThreads(client, signal) {
+  const threads = [];
+  let cursor3;
+  for (let page = 0; page < MAX_CODEX_PAGES; page += 1) {
+    const result = record5(await client.request("thread/list", {
+      limit: CODEX_PAGE_LIMIT,
+      sortKey: "updated_at",
+      sortDirection: "desc",
+      archived: false,
+      ...cursor3 === void 0 ? {} : { cursor: cursor3 }
+    }, signal));
+    for (const value of array3(result.data)) {
+      const thread = record5(value);
+      if (string5(thread.id) !== void 0) threads.push(thread);
+    }
+    cursor3 = typeof result.nextCursor === "string" && result.nextCursor.length > 0 ? result.nextCursor : void 0;
+    if (cursor3 === void 0) break;
+  }
+  return threads;
 }
 async function loadCodexProjects(client, signal) {
   const projects = [];
@@ -88585,11 +88592,11 @@ var CodexLiveProjection = class {
   async sessionFollow(request, signal) {
     const sessionId = sessionIdFromAddress2(record5(request.address));
     const threadId = nativeThreadId(sessionId);
-    await this.context.refreshAndPublishWorkspaces();
-    const history = await this.context.readHistoryPage(threadId, {
+    const historyPromise = this.context.readHistoryPage(threadId, {
       maxMessages: optionalPositiveInteger2(request.maxMessages)
     }, signal);
-    const directory = await this.context.models(signal).catch(() => void 0);
+    const directoryPromise = this.context.models(signal).catch(() => void 0);
+    const [history, directory] = await Promise.all([historyPromise, directoryPromise]);
     const queue = new AsyncValueQueue2(signal);
     const follow = {
       sessionId,
@@ -88643,6 +88650,7 @@ var CodexLiveProjection = class {
         throw new Error("The CodeX virtual Harness is closed.");
       }
       follow.close = () => stream.close();
+      void this.context.refreshAndPublishWorkspaces().catch(() => void 0);
     } catch (error62) {
       this.context.follows.delete(follow);
       queue.close();
@@ -89062,6 +89070,7 @@ var CodexLiveProjection = class {
 };
 
 // src/codex/virtual-harness.ts
+var CODEX_CATALOG_CACHE_MS = 2e3;
 var CodexVirtualHarness = class _CodexVirtualHarness {
   constructor(client, host, sessionGeneration = "legacy", hostCarrier) {
     this.client = client;
@@ -89150,6 +89159,8 @@ var CodexVirtualHarness = class _CodexVirtualHarness {
   imageAttachments = /* @__PURE__ */ new Map();
   modelDirectory;
   modelDirectoryPromise;
+  catalogPromise;
+  catalogLoadedAt = 0;
   lastProjectionSeq = 0;
   commandSeq = 0;
   selectedWorkspaceId;
@@ -89163,7 +89174,7 @@ var CodexVirtualHarness = class _CodexVirtualHarness {
     return (await this.refreshCatalog(signal)).workspaces;
   }
   async selectWorkspace(workspaceId, signal) {
-    const catalog = await loadCatalog(this.client, signal);
+    const catalog = await this.refreshCatalog(signal);
     const workspace2 = catalog.workspaces.find((item) => item.workspaceId === workspaceId);
     if (workspace2 === void 0) throw new Error("The selected CodeX workspace is no longer available.");
     this.selectedWorkspaceId = workspace2.workspaceId;
@@ -89354,16 +89365,35 @@ var CodexVirtualHarness = class _CodexVirtualHarness {
     this.selectedPermissions.clear();
     this.imageAttachments.clear();
   }
-  async refreshCatalog(signal) {
-    const catalog = await loadCatalog(this.client, signal, this.pendingThreads);
-    if (this.selectedWorkspaceId !== void 0 && !catalog.workspaces.some((workspace2) => workspace2.workspaceId === this.selectedWorkspaceId)) {
-      this.selectedWorkspaceId = void 0;
+  async refreshCatalog(signal, force = false) {
+    signal?.throwIfAborted();
+    const fresh = this.catalog !== void 0 && Date.now() - this.catalogLoadedAt < CODEX_CATALOG_CACHE_MS;
+    if (!force && fresh) return this.catalog;
+    if (force && this.catalogPromise !== void 0) {
+      try {
+        await awaitWithAbort(this.catalogPromise, signal);
+      } catch {
+        signal?.throwIfAborted();
+      }
     }
-    this.catalog = catalog;
-    return catalog;
+    const pending = this.catalogPromise;
+    if (!force && pending !== void 0) return awaitWithAbort(pending, signal);
+    const current = loadCatalog(this.client, void 0, this.pendingThreads).then((catalog) => {
+      if (this.selectedWorkspaceId !== void 0 && !catalog.workspaces.some((workspace2) => workspace2.workspaceId === this.selectedWorkspaceId)) {
+        this.selectedWorkspaceId = void 0;
+      }
+      this.catalog = catalog;
+      this.catalogLoadedAt = Date.now();
+      return catalog;
+    });
+    this.catalogPromise = current;
+    void current.finally(() => {
+      if (this.catalogPromise === current) this.catalogPromise = void 0;
+    }).catch(() => void 0);
+    return awaitWithAbort(current, signal);
   }
   async currentCatalog(signal) {
-    return this.catalog ?? this.refreshCatalog(signal);
+    return this.refreshCatalog(signal);
   }
   models(signal) {
     if (this.modelDirectory !== void 0) return Promise.resolve(this.modelDirectory);
@@ -89593,7 +89623,7 @@ var CodexVirtualHarness = class _CodexVirtualHarness {
   async archiveSession(request, signal) {
     const sessionId = requiredString2(request.sessionId, "sessionId");
     await this.client.request("thread/archive", { threadId: nativeThreadId(sessionId) }, signal);
-    const catalog = await this.refreshCatalog(signal);
+    const catalog = await this.refreshCatalog(signal, true);
     this.publishWorkspaceBaseline(catalog);
     return success3({ archivedSessionIds: [sessionId] });
   }
@@ -89622,7 +89652,7 @@ var CodexVirtualHarness = class _CodexVirtualHarness {
     this.blankThreads.add(projected.nativeId);
     this.selectedModels.set(projected.id, selection);
     this.selectedPermissions.set(projected.id, permissionPreset2);
-    await this.refreshAndPublishWorkspaces();
+    void this.refreshAndPublishWorkspaces(true).catch(() => void 0);
     const seq = this.nextProjectionSeq();
     this.events.emitRemoteEvent("api-session/added", [this.sessionSummary(projected, {
       blank: true,
@@ -89643,7 +89673,7 @@ var CodexVirtualHarness = class _CodexVirtualHarness {
     if (projected === void 0) return failure3("internal", "CodeX returned an invalid forked Thread.");
     this.selectedModels.set(projected.id, this.modelSelection(sessionId, await this.models(signal)));
     this.setPermissionSelection(projected.id, permissionPreset2);
-    await this.refreshAndPublishWorkspaces();
+    await this.refreshAndPublishWorkspaces(true);
     const seq = this.nextProjectionSeq();
     this.events.publishProjection(projected.id, "title", displayTitle(projected), seq);
     return success3({ sessionId: projected.id });
@@ -89654,7 +89684,15 @@ var CodexVirtualHarness = class _CodexVirtualHarness {
     const input4 = codexPromptInput(content);
     if (input4 === void 0) return failure3("attachment-error", "CodeX virtual Sessions accept text and pasted PNG, JPEG, WebP, or GIF images only.");
     const threadId = nativeThreadId(sessionId);
-    const selection = this.modelSelection(sessionId, await this.models(signal));
+    const knownSelection = this.selectedModels.get(sessionId) ?? (() => {
+      const session2 = this.catalog?.sessions.find((item) => item.id === sessionId);
+      return session2?.model === void 0 ? void 0 : {
+        provider: CODEX_PROVIDER,
+        model: session2.model,
+        ...session2.reasoningEffort === void 0 ? {} : { reasoningEffort: session2.reasoningEffort }
+      };
+    })();
+    const selection = knownSelection ?? this.modelSelection(sessionId, await this.models(signal));
     const isFreshBlankThread = this.blankThreads.has(threadId) || this.pendingThreads.has(threadId);
     if (!isFreshBlankThread) {
       const resumeResult = await this.client.request("thread/resume", {
@@ -89716,7 +89754,7 @@ var CodexVirtualHarness = class _CodexVirtualHarness {
     const seq = this.nextProjectionSeq();
     this.updateThreadName(nativeThreadId(sessionId), title);
     this.events.publishProjection(sessionId, "title", title, seq);
-    await this.refreshAndPublishWorkspaces();
+    await this.refreshAndPublishWorkspaces(true);
     return success3({ title, seq });
   }
   async sessionProjections(request, signal) {
@@ -89837,8 +89875,8 @@ var CodexVirtualHarness = class _CodexVirtualHarness {
       }
     });
   }
-  async refreshAndPublishWorkspaces() {
-    const catalog = await this.refreshCatalog().catch(() => void 0);
+  async refreshAndPublishWorkspaces(force = false) {
+    const catalog = await this.refreshCatalog(void 0, force).catch(() => void 0);
     if (catalog !== void 0) this.publishWorkspaceBaseline(catalog);
   }
   publishWorkspaceBaseline(catalog) {
@@ -89850,6 +89888,24 @@ var CodexVirtualHarness = class _CodexVirtualHarness {
     }
   }
 };
+function awaitWithAbort(promise2, signal) {
+  if (signal === void 0) return promise2;
+  signal.throwIfAborted();
+  return new Promise((resolve6, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise2.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve6(value);
+      },
+      (error62) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error62);
+      }
+    );
+  });
+}
 
 // src/control-route.ts
 var CONTROL_RPC_PREFIX = "/ds-harness-remote";
@@ -93538,6 +93594,7 @@ var ClientModeRuntime = class {
   remoteLifetime = new AbortController();
   selectionLifetime = new AbortController();
   reconnect;
+  featureProbePromises = /* @__PURE__ */ new WeakMap();
   recoverable;
   recoveryGeneration = 0;
   sessionTools = new RemoteSessionTools((hostId, signal, query) => this.withToolRemote(hostId, signal, query));
@@ -93862,7 +93919,7 @@ var ClientModeRuntime = class {
   }
   async listCodexWorkspaces(targetDeviceId, signal) {
     const remote = await this.ensureConnected(targetDeviceId, signal);
-    remote.features = await probeRemoteHostFeatures(remote.client, remote.clientVersion);
+    await this.refreshRemoteFeatures(remote);
     if (!remote.features.codex) {
       throw new ClientModeError("FEATURE_NOT_SUPPORTED", "The selected Host does not provide CodeX workspaces.");
     }
@@ -93878,7 +93935,7 @@ var ClientModeRuntime = class {
       }
     };
     assertCurrent();
-    remote.features = await probeRemoteHostFeatures(remote.client, remote.clientVersion);
+    await this.refreshRemoteFeatures(remote);
     assertCurrent();
     if (!remote.features.codex) {
       throw new ClientModeError("FEATURE_NOT_SUPPORTED", "The selected Host does not provide CodeX workspaces.");
@@ -93924,7 +93981,7 @@ var ClientModeRuntime = class {
     const trimmedPath = path.trim();
     if (trimmedPath === "") throw new ClientModeError("INVALID_MESSAGE", "A CodeX project directory is required.");
     const remote = await this.ensureConnected(targetDeviceId, signal);
-    remote.features = await probeRemoteHostFeatures(remote.client, remote.clientVersion);
+    await this.refreshRemoteFeatures(remote);
     if (!remote.features.codex) {
       throw new ClientModeError("FEATURE_NOT_SUPPORTED", "The selected Host does not provide CodeX workspaces.");
     }
@@ -93943,7 +94000,7 @@ var ClientModeRuntime = class {
   }
   async listCursorWorkspaces(targetDeviceId, signal, backend = "cursor") {
     const remote = await this.ensureConnected(targetDeviceId, signal);
-    remote.features = await probeRemoteHostFeatures(remote.client, remote.clientVersion);
+    await this.refreshRemoteFeatures(remote);
     if (!remote.features[backend]) {
       throw new ClientModeError("FEATURE_NOT_SUPPORTED", `The selected Host does not provide ${backend} workspaces.`);
     }
@@ -93956,7 +94013,7 @@ var ClientModeRuntime = class {
   }
   async openCursorWorkspace(targetDeviceId, workspaceId, signal, backend = "cursor") {
     const remote = await this.ensureConnected(targetDeviceId, signal);
-    remote.features = await probeRemoteHostFeatures(remote.client, remote.clientVersion);
+    await this.refreshRemoteFeatures(remote);
     if (!remote.features[backend]) {
       throw new ClientModeError("FEATURE_NOT_SUPPORTED", `The selected Host does not provide ${backend} workspaces.`);
     }
@@ -94000,7 +94057,7 @@ var ClientModeRuntime = class {
     const trimmedPath = path.trim();
     if (trimmedPath === "") throw new ClientModeError("INVALID_MESSAGE", `A ${backend} project directory is required.`);
     const remote = await this.ensureConnected(targetDeviceId, signal);
-    remote.features = await probeRemoteHostFeatures(remote.client, remote.clientVersion);
+    await this.refreshRemoteFeatures(remote);
     if (!remote.features[backend]) {
       throw new ClientModeError("FEATURE_NOT_SUPPORTED", `The selected Host does not provide ${backend} workspaces.`);
     }
@@ -94159,6 +94216,20 @@ var ClientModeRuntime = class {
       "HARNESS_VERSION_INCOMPATIBLE",
       "This Client does not provide a compatible Harness carrier for the selected remote workspace."
     );
+  }
+  async refreshRemoteFeatures(remote) {
+    const key = remote.client;
+    let pending = this.featureProbePromises.get(key);
+    if (pending === void 0) {
+      pending = probeRemoteHostFeatures(remote.client, remote.clientVersion);
+      this.featureProbePromises.set(key, pending);
+      void pending.finally(() => {
+        if (this.featureProbePromises.get(key) === pending) this.featureProbePromises.delete(key);
+      }).catch(() => void 0);
+    }
+    const features = await pending;
+    remote.features = features;
+    return features;
   }
   async ensureConnected(targetDeviceId, signal, isCurrent) {
     const lifetime = this.remoteLifetime.signal;
@@ -95356,6 +95427,21 @@ var CodexRemoteDomain = class {
   restartAttempt = 0;
   available = false;
   closed = false;
+  /**
+   * Workspace authority is intentionally not cached after a request finishes:
+   * project roots can change outside this process and must stay fail-closed.
+   * Concurrent calls during one catalog/history refresh do share this promise,
+   * though, so they do not each page the same project list independently.
+   */
+  workspaceAuthorityPromise;
+  /**
+   * Authorization checks are intentionally not retained after they settle:
+   * workspace roots can change outside this process and every new request must
+   * still revalidate them.  Calls that overlap one another may share the same
+   * bounded thread/read, though, which avoids duplicate first-open checks when
+   * a session history and its first prompt arrive together.
+   */
+  knownThreadPromises = /* @__PURE__ */ new Map();
   state = "disabled";
   unavailableCode;
   startPromise;
@@ -95629,6 +95715,7 @@ var CodexRemoteDomain = class {
     await Promise.all([...this.peers.values()].map((peer) => peer.failStreams("failed")));
     this.turnOwners.clear();
     this.permissionPresets.clear();
+    this.knownThreadPromises.clear();
     this.approvals.clear();
     if (this.approvalExpiryTimer !== void 0) clearTimeout(this.approvalExpiryTimer);
     this.approvalExpiryTimer = void 0;
@@ -95876,7 +95963,17 @@ var CodexRemoteDomain = class {
       throw error62;
     }
   }
-  async readKnownThread(threadId) {
+  readKnownThread(threadId) {
+    const pending = this.knownThreadPromises.get(threadId);
+    if (pending !== void 0) return pending;
+    const current = this.readKnownThreadUncached(threadId);
+    this.knownThreadPromises.set(threadId, current);
+    void current.finally(() => {
+      if (this.knownThreadPromises.get(threadId) === current) this.knownThreadPromises.delete(threadId);
+    }).catch(() => void 0);
+    return current;
+  }
+  async readKnownThreadUncached(threadId) {
     const authority = await this.readWorkspaceAuthority();
     let result;
     try {
@@ -95953,7 +96050,7 @@ var CodexRemoteDomain = class {
         throw new RpcError("CODEX_INVALID_RESPONSE", "Codex App Server returned an invalid Turn page.");
       }
       const pageResult = result;
-      for (const rawTurn of result.data) {
+      const pageTurns = await Promise.all(result.data.map(async (rawTurn) => {
         if (!isRecord13(rawTurn) || typeof rawTurn.id !== "string" || rawTurn.id.length === 0 || rawTurn.itemsView === "full" && !Array.isArray(rawTurn.items)) {
           throw new RpcError("CODEX_INVALID_RESPONSE", "Codex App Server returned an invalid history Turn.");
         }
@@ -95962,8 +96059,9 @@ var CodexRemoteDomain = class {
         if (items.some((item) => !isRecord13(item))) {
           throw new RpcError("CODEX_INVALID_RESPONSE", "Codex App Server returned an invalid history Item.");
         }
-        turns.push({ ...rawTurn, items });
-      }
+        return { ...rawTurn, items };
+      }));
+      turns.push(...pageTurns);
       cursor3 = historyNextCursor(pageResult.nextCursor);
       if (cursor3 === void 0) return turns;
     }
@@ -96098,7 +96196,22 @@ var CodexRemoteDomain = class {
       throw mapAppServerError(error62);
     }
   }
-  async readWorkspaceAuthority(listedThreads) {
+  readWorkspaceAuthority(listedThreads) {
+    const pending = this.workspaceAuthorityPromise;
+    if (pending !== void 0) return pending;
+    const current = this.readWorkspaceAuthorityUncached(listedThreads);
+    this.workspaceAuthorityPromise = current;
+    current.then(
+      () => {
+        if (this.workspaceAuthorityPromise === current) this.workspaceAuthorityPromise = void 0;
+      },
+      () => {
+        if (this.workspaceAuthorityPromise === current) this.workspaceAuthorityPromise = void 0;
+      }
+    );
+    return current;
+  }
+  async readWorkspaceAuthorityUncached(listedThreads) {
     const projectIds = /* @__PURE__ */ new Set();
     const roots = [];
     let cursor3;

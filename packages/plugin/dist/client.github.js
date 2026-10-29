@@ -3236,20 +3236,24 @@ Minimum version required to store current data is: ` + bestVersion + `.
             async () => {
               let nextWorkspaces = await props.control("workspaces.list", {
                 targetDeviceId: host.deviceId
-              }), nextCodexWorkspaces = await props.control("codex.workspaces.list", {
-                targetDeviceId: host.deviceId
-              }).catch(() => []), nextCursorWorkspaces = await props.control("cursor.workspaces.list", {
-                targetDeviceId: host.deviceId
-              }).catch(() => []), nextAntigravityWorkspaces = await props.control("antigravity.workspaces.list", {
-                targetDeviceId: host.deviceId
-              }).catch(() => []), nextPiWorkspaces = await props.control("pi.workspaces.list", {
-                targetDeviceId: host.deviceId
-              }).catch(() => []), nextOpencodeWorkspaces = await props.control("opencode.workspaces.list", {
-                targetDeviceId: host.deviceId
-              }).catch(() => []), nextClaudeWorkspaces = await props.control("claude.workspaces.list", {
-                targetDeviceId: host.deviceId
-              }).catch(() => []), nextStatus = await props.control("status").catch(() => {
-              });
+              }), [
+                nextCodexWorkspaces,
+                nextCursorWorkspaces,
+                nextAntigravityWorkspaces,
+                nextPiWorkspaces,
+                nextOpencodeWorkspaces,
+                nextClaudeWorkspaces,
+                nextStatus
+              ] = await Promise.all([
+                props.control("codex.workspaces.list", { targetDeviceId: host.deviceId }).catch(() => []),
+                props.control("cursor.workspaces.list", { targetDeviceId: host.deviceId }).catch(() => []),
+                props.control("antigravity.workspaces.list", { targetDeviceId: host.deviceId }).catch(() => []),
+                props.control("pi.workspaces.list", { targetDeviceId: host.deviceId }).catch(() => []),
+                props.control("opencode.workspaces.list", { targetDeviceId: host.deviceId }).catch(() => []),
+                props.control("claude.workspaces.list", { targetDeviceId: host.deviceId }).catch(() => []),
+                props.control("status").catch(() => {
+                })
+              ]);
               return nextStatus !== void 0 && setStatus(nextStatus), {
                 workspaces: nextWorkspaces,
                 codexWorkspaces: nextCodexWorkspaces,

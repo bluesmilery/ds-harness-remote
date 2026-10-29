@@ -18,6 +18,7 @@ import type {
   HostConnectionHandle,
   RemoteDeviceView,
   RemoteDirectoryListing,
+  RemoteHostFeatures,
   RemoteWorkspaceSelection,
   RemoteWorkspaceView,
 } from './client-runtime-contract.js'
@@ -95,6 +96,7 @@ export class ClientModeRuntime {
   private remoteLifetime = new AbortController()
   private selectionLifetime = new AbortController()
   private readonly reconnect: ClientReconnect
+  private readonly featureProbePromises = new WeakMap<object, Promise<RemoteHostFeatures>>()
   private recoverable?: ConnectedRemote
   private recoveryGeneration = 0
   private readonly sessionTools = new RemoteSessionTools((hostId, signal, query) => this.withToolRemote(hostId, signal, query))
@@ -526,7 +528,7 @@ export class ClientModeRuntime {
 
   async listCodexWorkspaces(targetDeviceId: string, signal?: AbortSignal): Promise<CodexVirtualWorkspaceView[]> {
     const remote = await this.ensureConnected(targetDeviceId, signal)
-    remote.features = await probeRemoteHostFeatures(remote.client, remote.clientVersion)
+    await this.refreshRemoteFeatures(remote)
     if (!remote.features.codex) {
       throw new ClientModeError('FEATURE_NOT_SUPPORTED', 'The selected Host does not provide CodeX workspaces.')
     }
@@ -547,7 +549,7 @@ export class ClientModeRuntime {
       }
     }
     assertCurrent()
-    remote.features = await probeRemoteHostFeatures(remote.client, remote.clientVersion)
+    await this.refreshRemoteFeatures(remote)
     assertCurrent()
     if (!remote.features.codex) {
       throw new ClientModeError('FEATURE_NOT_SUPPORTED', 'The selected Host does not provide CodeX workspaces.')
@@ -598,7 +600,7 @@ export class ClientModeRuntime {
     const trimmedPath = path.trim()
     if (trimmedPath === '') throw new ClientModeError('INVALID_MESSAGE', 'A CodeX project directory is required.')
     const remote = await this.ensureConnected(targetDeviceId, signal)
-    remote.features = await probeRemoteHostFeatures(remote.client, remote.clientVersion)
+    await this.refreshRemoteFeatures(remote)
     if (!remote.features.codex) {
       throw new ClientModeError('FEATURE_NOT_SUPPORTED', 'The selected Host does not provide CodeX workspaces.')
     }
@@ -618,7 +620,7 @@ export class ClientModeRuntime {
 
   async listCursorWorkspaces(targetDeviceId: string, signal?: AbortSignal, backend: 'cursor' | 'antigravity' | 'pi' | 'opencode' | 'claude' = 'cursor'): Promise<AcpVirtualWorkspaceView[]> {
     const remote = await this.ensureConnected(targetDeviceId, signal)
-    remote.features = await probeRemoteHostFeatures(remote.client, remote.clientVersion)
+    await this.refreshRemoteFeatures(remote)
     if (!remote.features[backend]) {
       throw new ClientModeError('FEATURE_NOT_SUPPORTED', `The selected Host does not provide ${backend} workspaces.`)
     }
@@ -637,7 +639,7 @@ export class ClientModeRuntime {
     backend: 'cursor' | 'antigravity' | 'pi' | 'opencode' | 'claude' = 'cursor',
   ): Promise<Record<string, unknown>> {
     const remote = await this.ensureConnected(targetDeviceId, signal)
-    remote.features = await probeRemoteHostFeatures(remote.client, remote.clientVersion)
+    await this.refreshRemoteFeatures(remote)
     if (!remote.features[backend]) {
       throw new ClientModeError('FEATURE_NOT_SUPPORTED', `The selected Host does not provide ${backend} workspaces.`)
     }
@@ -687,7 +689,7 @@ export class ClientModeRuntime {
     const trimmedPath = path.trim()
     if (trimmedPath === '') throw new ClientModeError('INVALID_MESSAGE', `A ${backend} project directory is required.`)
     const remote = await this.ensureConnected(targetDeviceId, signal)
-    remote.features = await probeRemoteHostFeatures(remote.client, remote.clientVersion)
+    await this.refreshRemoteFeatures(remote)
     if (!remote.features[backend]) {
       throw new ClientModeError('FEATURE_NOT_SUPPORTED', `The selected Host does not provide ${backend} workspaces.`)
     }
@@ -870,6 +872,21 @@ export class ClientModeRuntime {
       'HARNESS_VERSION_INCOMPATIBLE',
       'This Client does not provide a compatible Harness carrier for the selected remote workspace.',
     )
+  }
+
+  private async refreshRemoteFeatures(remote: ConnectedRemote): Promise<RemoteHostFeatures> {
+    const key = remote.client as unknown as object
+    let pending = this.featureProbePromises.get(key)
+    if (pending === undefined) {
+      pending = probeRemoteHostFeatures(remote.client, remote.clientVersion)
+      this.featureProbePromises.set(key, pending)
+      void pending.finally(() => {
+        if (this.featureProbePromises.get(key) === pending) this.featureProbePromises.delete(key)
+      }).catch(() => undefined)
+    }
+    const features = await pending
+    remote.features = features
+    return features
   }
 
   private async ensureConnected(

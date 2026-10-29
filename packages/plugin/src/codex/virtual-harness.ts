@@ -72,6 +72,11 @@ import {
   string,
 } from './virtual-values.js'
 
+// Workspace/session catalog reads are shared by several native controllers
+// during Web startup. Keep the short-lived snapshot so opening a Workspace and
+// its Session does not issue the same project/thread pages back-to-back.
+const CODEX_CATALOG_CACHE_MS = 2_000
+
 /**
  * A plugin-owned virtual Harness target. It projects CodeX Thread/Turn data at
  * the existing Typert carrier boundary, so every UI layer above the
@@ -96,6 +101,8 @@ export class CodexVirtualHarness implements RemoteTypertGatewayTarget {
   private readonly imageAttachments = new Map<string, CodexImageAttachmentEntry>()
   private modelDirectory?: CodexModelDirectory
   private modelDirectoryPromise?: Promise<CodexModelDirectory>
+  private catalogPromise?: Promise<CatalogState>
+  private catalogLoadedAt = 0
   private lastProjectionSeq = 0
   private commandSeq = 0
   private selectedWorkspaceId?: string
@@ -161,7 +168,7 @@ export class CodexVirtualHarness implements RemoteTypertGatewayTarget {
   }
 
   async selectWorkspace(workspaceId: string, signal?: AbortSignal): Promise<CodexVirtualWorkspaceView> {
-    const catalog = await loadCatalog(this.client, signal)
+    const catalog = await this.refreshCatalog(signal)
     const workspace = catalog.workspaces.find(item => item.workspaceId === workspaceId)
     if (workspace === undefined) throw new Error('The selected CodeX workspace is no longer available.')
     this.selectedWorkspaceId = workspace.workspaceId
@@ -342,18 +349,45 @@ export class CodexVirtualHarness implements RemoteTypertGatewayTarget {
     this.imageAttachments.clear()
   }
 
-  private async refreshCatalog(signal?: AbortSignal): Promise<CatalogState> {
-    const catalog = await loadCatalog(this.client, signal, this.pendingThreads)
-    if (this.selectedWorkspaceId !== undefined
-      && !catalog.workspaces.some(workspace => workspace.workspaceId === this.selectedWorkspaceId)) {
-      this.selectedWorkspaceId = undefined
+  private async refreshCatalog(signal?: AbortSignal, force = false): Promise<CatalogState> {
+    signal?.throwIfAborted()
+    const fresh = this.catalog !== undefined && Date.now() - this.catalogLoadedAt < CODEX_CATALOG_CACHE_MS
+    if (!force && fresh) return this.catalog!
+
+    // A forced refresh follows an in-flight read (for example a mutation that
+    // completed while the initial catalog was loading), then starts a fresh
+    // read so the mutation is reflected in the snapshot.
+    if (force && this.catalogPromise !== undefined) {
+      try {
+        await awaitWithAbort(this.catalogPromise, signal)
+      } catch {
+        signal?.throwIfAborted()
+        // The pending read may have failed because the transport was
+        // transiently unavailable. A forced mutation refresh still gets one
+        // fresh attempt instead of inheriting that failure.
+      }
     }
-    this.catalog = catalog
-    return catalog
+    const pending = this.catalogPromise
+    if (!force && pending !== undefined) return awaitWithAbort(pending, signal)
+
+    const current = loadCatalog(this.client, undefined, this.pendingThreads).then(catalog => {
+      if (this.selectedWorkspaceId !== undefined
+        && !catalog.workspaces.some(workspace => workspace.workspaceId === this.selectedWorkspaceId)) {
+        this.selectedWorkspaceId = undefined
+      }
+      this.catalog = catalog
+      this.catalogLoadedAt = Date.now()
+      return catalog
+    })
+    this.catalogPromise = current
+    void current.finally(() => {
+      if (this.catalogPromise === current) this.catalogPromise = undefined
+    }).catch(() => undefined)
+    return awaitWithAbort(current, signal)
   }
 
   private async currentCatalog(signal?: AbortSignal): Promise<CatalogState> {
-    return this.catalog ?? this.refreshCatalog(signal)
+    return this.refreshCatalog(signal)
   }
 
   private models(signal?: AbortSignal): Promise<CodexModelDirectory> {
@@ -614,7 +648,7 @@ export class CodexVirtualHarness implements RemoteTypertGatewayTarget {
   private async archiveSession(request: JsonRecord, signal: AbortSignal): Promise<unknown> {
     const sessionId = requiredString(request.sessionId, 'sessionId')
     await this.client.request('thread/archive', { threadId: nativeThreadId(sessionId) }, signal)
-    const catalog = await this.refreshCatalog(signal)
+    const catalog = await this.refreshCatalog(signal, true)
     this.publishWorkspaceBaseline(catalog)
     return success({ archivedSessionIds: [sessionId] })
   }
@@ -645,7 +679,12 @@ export class CodexVirtualHarness implements RemoteTypertGatewayTarget {
     this.blankThreads.add(projected.nativeId)
     this.selectedModels.set(projected.id, selection)
     this.selectedPermissions.set(projected.id, permissionPreset)
-    await this.refreshAndPublishWorkspaces()
+    // A new Thread is not materialized in the upstream index until its first
+    // user message. Do not make the create response wait for a full
+    // project/thread rescan that cannot observe the new Thread yet. The
+    // pending thread is retained locally and the baseline catches up in the
+    // background while the composer can send the first prompt immediately.
+    void this.refreshAndPublishWorkspaces(true).catch(() => undefined)
     const seq = this.nextProjectionSeq()
     this.events.emitRemoteEvent('api-session/added', [this.sessionSummary(projected, {
       blank: true,
@@ -667,7 +706,7 @@ export class CodexVirtualHarness implements RemoteTypertGatewayTarget {
     if (projected === undefined) return failure('internal', 'CodeX returned an invalid forked Thread.')
     this.selectedModels.set(projected.id, this.modelSelection(sessionId, await this.models(signal)))
     this.setPermissionSelection(projected.id, permissionPreset)
-    await this.refreshAndPublishWorkspaces()
+    await this.refreshAndPublishWorkspaces(true)
     const seq = this.nextProjectionSeq()
     this.events.publishProjection(projected.id, 'title', displayTitle(projected), seq)
     return success({ sessionId: projected.id })
@@ -679,7 +718,20 @@ export class CodexVirtualHarness implements RemoteTypertGatewayTarget {
     const input = codexPromptInput(content)
     if (input === undefined) return failure('attachment-error', 'CodeX virtual Sessions accept text and pasted PNG, JPEG, WebP, or GIF images only.')
     const threadId = nativeThreadId(sessionId)
-    const selection = this.modelSelection(sessionId, await this.models(signal))
+    // Session follow/history normally hydrates this selection before the
+    // composer can send. Reuse that state (and the selection captured by
+    // session/create) instead of cold-loading the whole model catalog on the
+    // first prompt. Only an entirely cold prompt needs model/list.
+    const knownSelection = this.selectedModels.get(sessionId)
+      ?? (() => {
+        const session = this.catalog?.sessions.find(item => item.id === sessionId)
+        return session?.model === undefined ? undefined : {
+          provider: CODEX_PROVIDER,
+          model: session.model,
+          ...(session.reasoningEffort === undefined ? {} : { reasoningEffort: session.reasoningEffort }),
+        }
+      })()
+    const selection = knownSelection ?? this.modelSelection(sessionId, await this.models(signal))
     const isFreshBlankThread = this.blankThreads.has(threadId) || this.pendingThreads.has(threadId)
     if (!isFreshBlankThread) {
       const resumeResult = await this.client.request('thread/resume', {
@@ -748,7 +800,7 @@ export class CodexVirtualHarness implements RemoteTypertGatewayTarget {
     const seq = this.nextProjectionSeq()
     this.updateThreadName(nativeThreadId(sessionId), title)
     this.events.publishProjection(sessionId, 'title', title, seq)
-    await this.refreshAndPublishWorkspaces()
+    await this.refreshAndPublishWorkspaces(true)
     return success({ title, seq })
   }
 
@@ -884,8 +936,8 @@ export class CodexVirtualHarness implements RemoteTypertGatewayTarget {
     })
   }
 
-  private async refreshAndPublishWorkspaces(): Promise<void> {
-    const catalog = await this.refreshCatalog().catch(() => undefined)
+  private async refreshAndPublishWorkspaces(force = false): Promise<void> {
+    const catalog = await this.refreshCatalog(undefined, force).catch(() => undefined)
     if (catalog !== undefined) this.publishWorkspaceBaseline(catalog)
   }
 
@@ -897,6 +949,19 @@ export class CodexVirtualHarness implements RemoteTypertGatewayTarget {
       queue.push({ type: 'archived', archivedSessionIds: catalog.sessions.filter(item => item.archived).map(item => item.id) })
     }
   }
+}
+
+function awaitWithAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (signal === undefined) return promise
+  signal.throwIfAborted()
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason)
+    signal.addEventListener('abort', onAbort, { once: true })
+    promise.then(
+      value => { signal.removeEventListener('abort', onAbort); resolve(value) },
+      error => { signal.removeEventListener('abort', onAbort); reject(error) },
+    )
+  })
 }
 
 // Keep existing Host and Client imports stable.
