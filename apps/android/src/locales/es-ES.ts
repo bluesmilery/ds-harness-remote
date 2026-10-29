@@ -156,7 +156,7 @@ const esES = {
     "notText": "Este archivo no es texto UTF-8 y no se puede obtener una vista previa.",
     "tooLarge": "El archivo o página excede el límite de lectura del Host.",
     previewUnsupported: "La vista previa no está disponible para este tipo de archivo.",
-    previewTooLarge: "Límites móviles: 8 MiB, dimensiones de imagen de 8192 píxeles y 16 millones de píxeles en total; Fuentes de oficina: 50 MiB.",
+    previewTooLarge: "Límites móviles: PDF de 16 MiB; imágenes de 8 MiB; dimensiones de imagen de 8192 píxeles y 16 millones de píxeles en total; Fuentes de oficina: 50 MiB.",
     accessDenied: "El anfitrión negó el acceso a esta sesión. Verifique la autorización en la computadora.",
     previewChanged: "El archivo cambió mientras se leía. Actualiza e inténtalo de nuevo.",
     previewInvalid: "El anfitrión devolvió datos de archivo no válidos. Se detuvo la vista previa.",

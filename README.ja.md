@@ -39,7 +39,7 @@ DS Harness Remote は、その環境にアクセスするためのもう一つ�
 
 DeepSeek Harness デスクトップ版に対応しています。最新リリースをインストールしてください。
 
-`ds-harness-remote@0.5.23`
+`ds-harness-remote@0.6.0`
 
 ## 主な機能
 
@@ -78,7 +78,7 @@ DeepSeek Harness デスクトップ版に対応しています。最新リリー
 
 | クライアント | 形式 | 状態 | 備考 |
 | --- | --- | --- | --- |
-| DSH Desktop プラグイン | Remote サイドバー | 対応 | `ds-harness-remote@0.5.23` をインストールします。このパソコンを Host としても利用できます |
+| DSH Desktop プラグイン | Remote サイドバー | 対応 | `ds-harness-remote@0.6.0` をインストールします。このパソコンを Host としても利用できます |
 | Web | ブラウザーページ | 対応 | [https://dsh.r2049.cn](https://dsh.r2049.cn) を開きます。ネイティブの Harness UI を再利用します |
 | Android | ネイティブアプリ | 対応 | [Releases](https://github.com/liguobao/ds-harness-remote/releases/latest) から APK をダウンロードできます。[Android ガイド](apps/android/README.md)を参照してください |
 | iOS | TestFlight ベータ | ベータ | 一般公開はまだ行っていません。[Issue #20](https://github.com/liguobao/ds-harness-remote/issues/20) を参照してください |
@@ -93,9 +93,9 @@ DeepSeek Harness デスクトップ版に対応しています。最新リリー
 
 DeepSeek Harness Desktop の **Extensions / Plugin management** を開き、npm からのインストールを選択して、次のパッケージを入力します。
 
-`ds-harness-remote@0.5.23`
+`ds-harness-remote@0.6.0`
 
-インストール後に Desktop を再起動してください。公式の `dsh` ランチャーでも、`dsh plugin --profile desktop add -w ds-harness-remote@0.5.23` を実行して指定バージョンをインストールできます。
+インストール後に Desktop を再起動してください。公式の `dsh` ランチャーでも、`dsh plugin --profile desktop add -w ds-harness-remote@0.6.0` を実行して指定バージョンをインストールできます。
 
 ### dsh-TUI Host
 
@@ -106,7 +106,7 @@ DeepSeek Harness Desktop の **Extensions / Plugin management** を開き、npm 
 DSH のプラグインマネージャーを使い、`web` プロファイルに指定バージョンのパッケージを追加します。
 
 ```sh
-dsh plugin --profile web add -w ds-harness-remote@0.5.23
+dsh plugin --profile web add -w ds-harness-remote@0.6.0
 ```
 
 インストール後に DeepSeek Harness を再起動してください。

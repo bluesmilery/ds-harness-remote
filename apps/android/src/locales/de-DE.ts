@@ -156,7 +156,7 @@ const deDE = {
     "notText": "Diese Datei ist kein UTF-8-Text und kann nicht in der Vorschau angezeigt werden.",
     "tooLarge": "Die Datei oder Seite überschreitet das Leselimit des Hosts.",
     previewUnsupported: "Für diesen Dateityp ist keine Vorschau verfügbar.",
-    previewTooLarge: "Grenzwerte für Mobilgeräte: 8 MiB, Bildabmessungen von 8192 Pixeln und insgesamt 16 Millionen Pixel; Office-Quellen: 50 MiB.",
+    previewTooLarge: "Grenzwerte für Mobilgeräte: PDFs 16 MiB; Bilder 8 MiB; Bildabmessungen von 8192 Pixeln und insgesamt 16 Millionen Pixel; Office-Quellen: 50 MiB.",
     accessDenied: "Der Host hat den Zugriff für diese Sitzung verweigert. Überprüfen Sie die Berechtigung am Computer.",
     previewChanged: "Die Datei wurde beim Lesen geändert. Aktualisieren Sie und versuchen Sie es erneut.",
     previewInvalid: "Der Host hat ungültige Dateidaten zurückgegeben. Die Vorschau wurde gestoppt.",

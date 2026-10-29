@@ -156,7 +156,7 @@ const frFR = {
     "notText": "Ce fichier n'est pas du texte UTF-8 et ne peut pas être prévisualisé.",
     "tooLarge": "Le fichier ou la page dépasse la limite de lecture de l'hôte.",
     previewUnsupported: "L'aperçu n'est pas disponible pour ce type de fichier.",
-    previewTooLarge: "Limites mobiles : 8 Mio, dimensions d'image de 8 192 pixels et 16 millions de pixels au total ; Sources bureautiques : 50 Mio.",
+    previewTooLarge: "Limites mobiles : PDF 16 Mio ; images 8 Mio ; dimensions d'image de 8 192 pixels et 16 millions de pixels au total ; sources bureautiques : 50 Mio.",
     accessDenied: "L'hôte a refusé l'accès à cette session. Vérifiez l'autorisation sur l'ordinateur.",
     previewChanged: "Le fichier a changé lors de sa lecture. Actualisez et réessayez.",
     previewInvalid: "L'hôte a renvoyé des données de fichier non valides. L'aperçu a été arrêté.",

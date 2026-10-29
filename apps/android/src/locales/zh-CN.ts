@@ -154,7 +154,7 @@ const zhCN = {
     "notText": "此文件不是 UTF-8 文本，暂不支持预览。",
     "tooLarge": "文件或页面超过 Host 读取限制。",
     previewUnsupported: '此文件暂不支持预览。',
-    previewTooLarge: '超过手机预览限制：8 MiB、图片边长 8192 像素及 1600 万像素；Office 源文件最多 50 MiB。',
+    previewTooLarge: '超过手机预览限制：PDF 16 MiB、图片 8 MiB、图片边长 8192 像素及 1600 万像素；Office 源文件最多 50 MiB。',
     accessDenied: 'Host 拒绝了此会话的访问，请检查电脑端的授权。',
     previewChanged: '文件在读取期间发生变化，请刷新后重试。',
     previewInvalid: 'Host 返回的文件数据无效，已停止预览。',

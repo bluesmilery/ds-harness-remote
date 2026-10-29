@@ -1,6 +1,6 @@
 ## 中文
 
-**v0.5.23 · Android build 68**
+**v0.6.0 · Android build 69**
 
 ### 更新
 
@@ -18,7 +18,7 @@
 
 ## English
 
-**v0.5.23 · Android build 68**
+**v0.6.0 · Android build 69**
 
 ### Updates
 

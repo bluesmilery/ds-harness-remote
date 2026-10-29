@@ -1,3 +1,15 @@
+## 0.6.0 — 2026-10-29
+
+Android build 69.
+
+### English
+
+- Update the Plugin and Android app release version to 0.6.0.
+
+### 中文
+
+- 将 Plugin 与 Android App 发布版本更新为 0.6.0。
+
 ## 0.5.23 — 2026-10-29
 
 Android build 68.

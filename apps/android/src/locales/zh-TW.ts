@@ -154,7 +154,7 @@ const zhTW = {
     "notText": "此檔案不是 UTF-8 文字，暫不支援預覽。",
     "tooLarge": "檔案或頁面超過 Host 讀取限制。",
     previewUnsupported: '此檔案暫不支援預覽。',
-    previewTooLarge: '超過手機預覽限制：8 MiB、圖片邊長 8192 畫素及 1600 萬畫素；Office 原始檔最多 50 MiB。',
+    previewTooLarge: '超過手機預覽限制：PDF 16 MiB、圖片 8 MiB、圖片邊長 8192 畫素及 1600 萬畫素；Office 原始檔最多 50 MiB。',
     accessDenied: 'Host 拒絕了此會話的訪問，請檢查電腦端的授權。',
     previewChanged: '檔案在讀取期間發生變化，請重新整理後重試。',
     previewInvalid: 'Host 返回的檔案資料無效，已停止預覽。',

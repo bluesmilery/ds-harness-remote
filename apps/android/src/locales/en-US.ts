@@ -156,7 +156,7 @@ const enUS = {
     "notText": "This file is not UTF-8 text and cannot be previewed.",
     "tooLarge": "The file or page exceeds the Host read limit.",
     previewUnsupported: 'Preview isn’t available for this file type.',
-    previewTooLarge: 'Mobile limits: 8 MiB, image dimensions of 8192 pixels and 16 million pixels total; Office sources: 50 MiB.',
+    previewTooLarge: 'Mobile limits: PDFs 16 MiB; images 8 MiB; image dimensions 8192 pixels and 16 million pixels total; Office sources: 50 MiB.',
     accessDenied: 'The Host denied access for this session. Check authorization on the computer.',
     previewChanged: 'The file changed while being read. Refresh and try again.',
     previewInvalid: 'The Host returned invalid file data. Preview was stopped.',

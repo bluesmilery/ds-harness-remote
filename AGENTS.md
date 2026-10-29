@@ -159,7 +159,7 @@ macOS 仍使用普通用户，优先复用 Desktop 官方 launcher，否则已�
 Desktop 默认保留的 `desktop` profile，只能由其官方 launcher 管理。一次性 Token 复用官方身份/凭据与既有注册码接口，
 不得记录或作为持久设备凭据使用。Windows 用户使用官方插件管理或已有 Harness 的官方命令。
 卸载先按安装指南停用 Linux 系统服务，再通过官方插件管理或 `dsh plugin remove` 移除 Remote；不自动删除 runtime、
-凭据或迁移旧 service。当前待发布版本为 `0.5.23`，Android `versionCode` / Expo iOS `buildNumber` 为 `68`；发版准备已将安装说明同步到 `ds-harness-remote@0.5.23`，Tag、npm 与 GitHub Release 的发布状态以实际发布结果为准。
+凭据或迁移旧 service。当前待发布版本为 `0.6.0`，Android `versionCode` / Expo iOS `buildNumber` 为 `69`；发版准备已将安装说明同步到 `ds-harness-remote@0.6.0`，Tag、npm 与 GitHub Release 的发布状态以实际发布结果为准。
 
 ## Validation Baseline
 
@@ -291,7 +291,7 @@ workspace 全量 check 在 Server web 类型检查处停滞，不作为通过记
 原生键盘、TalkBack 和跨设备行为尚未验证。
 
 Android 只读预览（Issue #72）：`workspace-file-preview.ts` 复用官方 stat/readBytes 和
-Office generation/render，校验文件版本、分块、大小和取消；图片/PDF 上限 8 MiB，Office
+Office generation/render，校验文件版本、分块、大小和取消；图片上限 8 MiB、PDF 上限 16 MiB，Office
 源文件上限 50 MiB。PDF.js 固定版本与 xterm 一起经 `build:renderers` 本地打包；prepare/check、
 CI/release APK 均需生成忽略的 renderer 源文件。PDF 仅单页画布预览，无脚本、外链、导出、
 明文文件缓存或文本选择；不增加 Host 端点或写权限。Office 单次调用使用更长客户端超时，
