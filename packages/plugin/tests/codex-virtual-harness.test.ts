@@ -827,6 +827,39 @@ describe('CodexVirtualHarness', () => {
         },
       },
       {
+        name: 'bounds the native 500-message follow window to the Remote page limit',
+        run: async () => {
+          const client = fakeCodex()
+          const originalRequest = client.request.getMockImplementation()!
+          client.request.mockImplementation(async (method: string, params?: Record<string, unknown>, signal?: AbortSignal) => {
+            if (method === 'dsh/sessionHistory' && params?.maxMessages === 500) {
+              throw Object.assign(new Error('The CodeX call parameters are invalid.'), { code: 'INVALID_MESSAGE' })
+            }
+            return originalRequest(method, params, signal)
+          })
+          const target = new CodexVirtualHarness(client, { deviceId: 'host-1', name: 'Host' })
+          const controller = new AbortController()
+          try {
+            const stream = await target.open(
+              'session/follow',
+              { args: { request: { address: { kind: 'session', sessionId: 'codex:thr_1' }, maxMessages: 500 } } },
+              controller.signal,
+            )
+            const iterator = stream[Symbol.asyncIterator]()
+            await expect(iterator.next()).resolves.toMatchObject({ done: false, value: { type: 'snapshot' } })
+            expect(client.request).toHaveBeenCalledWith(
+              'dsh/sessionHistory',
+              { threadId: 'thr_1', maxMessages: 200 },
+              expect.any(AbortSignal),
+            )
+            await iterator.return?.()
+          } finally {
+            controller.abort()
+            await target.close()
+          }
+        },
+      },
+      {
         name: 'falls back to thread/read history when a remote Host lacks the paginated DSH method',
         run: async () => {
           const client = fakeCodex()

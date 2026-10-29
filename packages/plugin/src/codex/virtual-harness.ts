@@ -61,6 +61,7 @@ import { CodexLiveProjection } from './virtual-live.js'
 import type { CodexClientLike, JsonRecord } from './virtual-values.js'
 import {
   array,
+  boundedCodexHistoryPageSize,
   errorCode,
   nativeThreadId,
   optionalInteger,
@@ -786,13 +787,17 @@ export class CodexVirtualHarness implements RemoteTypertGatewayTarget {
     page: { beforeSeq?: number; throughSeq?: number; maxMessages?: number },
     signal?: AbortSignal,
   ): Promise<CodexNativeHistoryPage> {
+    const boundedPage = {
+      ...page,
+      maxMessages: boundedCodexHistoryPageSize(page.maxMessages),
+    }
     let value: unknown
     try {
       value = record(await this.client.request('dsh/sessionHistory', {
         threadId,
-        ...(page.beforeSeq === undefined ? {} : { beforeSeq: page.beforeSeq }),
-        ...(page.throughSeq === undefined ? {} : { throughSeq: page.throughSeq }),
-        ...(page.maxMessages === undefined ? {} : { maxMessages: page.maxMessages }),
+        ...(boundedPage.beforeSeq === undefined ? {} : { beforeSeq: boundedPage.beforeSeq }),
+        ...(boundedPage.throughSeq === undefined ? {} : { throughSeq: boundedPage.throughSeq }),
+        ...(boundedPage.maxMessages === undefined ? {} : { maxMessages: boundedPage.maxMessages }),
       }, signal))
     } catch (error) {
       if (!isLegacySessionHistoryUnsupported(error)) throw error
@@ -815,7 +820,7 @@ export class CodexVirtualHarness implements RemoteTypertGatewayTarget {
         {
           beforeSeq: page.beforeSeq,
           throughSeq: page.throughSeq,
-          maxMessages: page.maxMessages,
+          maxMessages: boundedPage.maxMessages,
         },
       )
     }

@@ -87136,6 +87136,7 @@ function record4(value) {
 
 // src/codex/virtual-values.ts
 var CODEX_SESSION_PREFIX = "codex:";
+var CODEX_HISTORY_PAGE_MAX_MESSAGES = 200;
 function nativeThreadId(sessionId) {
   if (!sessionId.startsWith(CODEX_SESSION_PREFIX) || sessionId.length === CODEX_SESSION_PREFIX.length) {
     throw new Error("The selected Session does not belong to CodeX.");
@@ -87175,6 +87176,9 @@ function optionalPositiveInteger2(value) {
   const parsed = optionalInteger2(value);
   if (parsed !== void 0 && parsed <= 0) throw new Error("The CodeX History page size is invalid.");
   return parsed;
+}
+function boundedCodexHistoryPageSize(value) {
+  return value === void 0 ? void 0 : Math.min(value, CODEX_HISTORY_PAGE_MAX_MESSAGES);
 }
 function requiredString2(value, field) {
   if (typeof value !== "string" || value.length === 0) throw new Error(`The CodeX ${field} is required.`);
@@ -89606,13 +89610,17 @@ var CodexVirtualHarness = class _CodexVirtualHarness {
     return void 0;
   }
   async readHistoryPage(threadId, page, signal) {
+    const boundedPage = {
+      ...page,
+      maxMessages: boundedCodexHistoryPageSize(page.maxMessages)
+    };
     let value;
     try {
       value = record5(await this.client.request("dsh/sessionHistory", {
         threadId,
-        ...page.beforeSeq === void 0 ? {} : { beforeSeq: page.beforeSeq },
-        ...page.throughSeq === void 0 ? {} : { throughSeq: page.throughSeq },
-        ...page.maxMessages === void 0 ? {} : { maxMessages: page.maxMessages }
+        ...boundedPage.beforeSeq === void 0 ? {} : { beforeSeq: boundedPage.beforeSeq },
+        ...boundedPage.throughSeq === void 0 ? {} : { throughSeq: boundedPage.throughSeq },
+        ...boundedPage.maxMessages === void 0 ? {} : { maxMessages: boundedPage.maxMessages }
       }, signal));
     } catch (error62) {
       if (!isLegacySessionHistoryUnsupported(error62)) throw error62;
@@ -89631,7 +89639,7 @@ var CodexVirtualHarness = class _CodexVirtualHarness {
         {
           beforeSeq: page.beforeSeq,
           throughSeq: page.throughSeq,
-          maxMessages: page.maxMessages
+          maxMessages: boundedPage.maxMessages
         }
       );
     }
@@ -94730,7 +94738,7 @@ var schemas = {
     threadId: id3,
     beforeSeq: external_exports.number().int().nonnegative().optional(),
     throughSeq: external_exports.number().int().min(-1).optional(),
-    maxMessages: external_exports.number().int().min(1).max(200).optional()
+    maxMessages: external_exports.number().int().min(1).max(CODEX_HISTORY_PAGE_MAX_MESSAGES).optional()
   }).strict(),
   "dsh/sessionAttachment": external_exports.object({
     threadId: id3,
