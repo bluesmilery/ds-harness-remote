@@ -79625,14 +79625,17 @@ var AdaptiveTransport = class extends BaseTransport {
         try {
           const data2 = parseRelayDataFrame(event.data);
           if (data2.type === "relay.ready") {
-            if (data2.payload.connectionId !== this.connectionId)
-              throw new Error("Relay data attach connection mismatch");
+            if (data2.payload.connectionId !== this.connectionId || assignment.relayEpoch !== void 0 && data2.payload.epoch !== assignment.relayEpoch) {
+              throw new Error("Relay data attach assignment mismatch");
+            }
             clearTimeout(timer2);
             this.dataReady = true;
             resolve6();
             return;
           }
-          void this.handleDataSocketFrame(data2.type, data2.payload);
+          void this.handleDataSocketFrame(data2.type, data2.payload).catch((error62) => {
+            this.failConnection(error62 instanceof Error ? error62 : new Error("Invalid Relay data frame"));
+          });
         } catch (error62) {
           clearTimeout(timer2);
           reject(error62 instanceof Error ? error62 : new Error("Invalid Relay data frame"));

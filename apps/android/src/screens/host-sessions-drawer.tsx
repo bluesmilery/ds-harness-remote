@@ -1051,7 +1051,7 @@ const createStyles = (colors: ThemeColors) =>
       borderRadius: radius.sm,
       backgroundColor: colors.surface,
     },
-    newSessionText: { ...type.smallStrong, color: colors.ink },
+    newSessionText: { ...type.bodyStrong, color: colors.ink },
 
     navItem: {
       flexDirection: 'row',
@@ -1069,19 +1069,17 @@ const createStyles = (colors: ThemeColors) =>
       height: 36,
       borderRadius: radius.sm,
     },
-    navItemText: { ...type.small, color: colors.ink },
+    navItemText: { ...type.body, color: colors.ink },
 
     workspacesToolbarArea: { position: 'relative' },
     workspacesToolbar: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
+      gap: spacing.xs,
       paddingHorizontal: spacing.md,
       paddingTop: spacing.md,
       paddingBottom: spacing.xs,
     },
-    workspacesTitle: { ...type.caption, fontWeight: '600', color: colors.muted },
-    toolbarActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+    workspacesTitle: { ...type.heading, color: colors.ink },
+    toolbarActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 2 },
 
     searchContainer: {
       flexDirection: 'row',
@@ -1109,7 +1107,7 @@ const createStyles = (colors: ThemeColors) =>
       borderRadius: radius.sm,
     },
     workspaceRowLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flex: 1 },
-    workspaceRowTitle: { ...type.smallStrong, color: colors.ink, flex: 1 },
+    workspaceRowTitle: { ...type.bodyStrong, color: colors.ink, flex: 1 },
 
     sessionRow: {
       flexDirection: 'row',

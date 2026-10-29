@@ -482,8 +482,6 @@ function createStyles(colors: ThemeColors) {
     topBarTitles: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.xs, gap: 1 },
     topBarTitle: {
       ...type.heading,
-      fontSize: 16,
-      lineHeight: 22,
       textAlign: 'center',
       color: colors.ink,
       fontWeight: '700',
@@ -530,7 +528,7 @@ function createStyles(colors: ThemeColors) {
     rowInlineSubtitle: { flex: 1 },
     rowMeta: { ...type.caption, color: colors.subtle },
     sectionTitleRow: { marginTop: spacing.xxl, marginBottom: spacing.xs, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    sectionTitle: { ...type.smallStrong, color: colors.muted },
+    sectionTitle: { ...type.heading, color: colors.muted },
     keyValue: { paddingVertical: spacing.sm, flexDirection: 'row', gap: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.separator },
     keyLabel: { ...type.small, color: colors.muted, maxWidth: '40%' },
     keyValueText: { ...type.smallStrong, color: colors.ink, flex: 1, textAlign: 'right' },

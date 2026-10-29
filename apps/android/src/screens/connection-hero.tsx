@@ -33,7 +33,6 @@ export function ConnectionHero({ secured, ready, failed }: {
   const styles = useThemedStyles(createStyles)
   const reduceMotion = useReduceMotion()
   const halo = useRef(new Animated.Value(0)).current
-  const bob = useRef(new Animated.Value(0.5)).current
   const lock = useRef(new Animated.Value(secured ? 1 : 0)).current
   const done = useRef(new Animated.Value(ready ? 1 : 0)).current
 
@@ -43,21 +42,14 @@ export function ConnectionHero({ secured, ready, failed }: {
     if (!breathing) {
       halo.stopAnimation()
       halo.setValue(0)
-      bob.setValue(0.5)
       return
     }
     const haloLoop = Animated.loop(Animated.timing(halo, { toValue: 1, duration: 2200, easing: Easing.out(Easing.quad), useNativeDriver: true }))
-    const bobLoop = Animated.loop(Animated.sequence([
-      Animated.timing(bob, { toValue: 1, duration: 1300, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      Animated.timing(bob, { toValue: 0, duration: 1300, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-    ]))
     haloLoop.start()
-    bobLoop.start()
     return () => {
       haloLoop.stop()
-      bobLoop.stop()
     }
-  }, [bob, breathing, halo])
+  }, [breathing, halo])
 
   useEffect(() => {
     Animated.timing(lock, { toValue: secured && !ready ? 1 : 0, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start()
@@ -85,13 +77,7 @@ export function ConnectionHero({ secured, ready, failed }: {
           <Path d="M30 44 H42" stroke={colors.surface} strokeWidth={1} strokeLinecap="round" />
         </Svg>
         <View style={styles.screen}>
-          <Animated.View style={{
-            transform: [
-              { translateY: bob.interpolate({ inputRange: [0, 1], outputRange: [1.5, -1.5] }) },
-              // The brand mark faces left; mirror it to face into the screen.
-              { scaleX: -1 },
-            ],
-          }}>
+          <Animated.View style={{ transform: [{ scaleX: -1 }] }}>
             <Svg width={WHALE_WIDTH} height={WHALE_HEIGHT} viewBox={`0 0 ${FISH_LOGO_VIEWBOX.width} ${FISH_LOGO_VIEWBOX.height}`}>
               <Path d={FISH_LOGO_PATH} fill={whale} />
             </Svg>
