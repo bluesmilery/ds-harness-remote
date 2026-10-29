@@ -111,6 +111,8 @@ jobs:
           sha256sum *.tgz *.zip > SHA256SUMS.txt
 
       - name: Publish npm plugin
+        id: npm-publish
+        continue-on-error: true
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           PACKAGE_NAME="$(node -p "JSON.parse(require('fs').readFileSync('packages/plugin/package.json', 'utf8')).name")"
@@ -120,6 +122,10 @@ jobs:
           else
             (cd packages/plugin && npm publish)
           fi
+
+      - name: Report npm publish failure
+        if: steps.npm-publish.outcome == 'failure'
+        run: echo '::warning::npm publish failed; GitHub Packages, GitHub Release, and Android APK publication will continue. Retry this tag after refreshing npm registry credentials.'
 
       - name: Publish GitHub Packages plugin
         env:
