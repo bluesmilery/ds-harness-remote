@@ -1,6 +1,7 @@
 import {
   HARNESS_API_TRANSFER_CHUNK_BYTES,
   MAX_HARNESS_API_TRANSFER_BYTES,
+  MAX_REMOTE_CAPABILITY_ENTRIES,
   parseRemoteWorkspaceTypes,
   type EventPayload,
   type HarnessRemoteFrameData,
@@ -112,6 +113,7 @@ export async function probeRemoteHostFeatures(
     throw error
   }
   if (!isRecord(value) || !Array.isArray(value.capabilities)
+    || value.capabilities.length > MAX_REMOTE_CAPABILITY_ENTRIES
     || value.capabilities.some(capability => typeof capability !== 'string')) {
     throw new RemoteGatewayError('INVALID_MESSAGE', 'The remote Host returned invalid transport capabilities.')
   }

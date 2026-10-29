@@ -18,13 +18,13 @@ const imageBlock = z.object({ type: z.literal('image'), mimeType: z.enum(['image
 const promptBlock = z.union([textBlock, imageBlock])
 
 export const acpToolStreamSchema = z.object({
-  backend: z.enum(['cursor', 'claude', 'antigravity', 'pi', 'opencode']), endpoint: z.enum(ACP_TOOL_STREAM_ENDPOINTS), args: z.record(z.unknown()),
+  backend: z.enum(['cursor', 'claude', 'antigravity', 'pi', 'opencode']), endpoint: z.enum(ACP_TOOL_STREAM_ENDPOINTS), args: z.record(z.string(), z.unknown()),
 }).strict()
 
 const schemas = {
   'dsh/sessionArchive': z.object({ sessionId: id.regex(/^[A-Za-z0-9_-]+$/), backend: z.literal('opencode') }).strict(),
   'dsh/toolCall': z.object({ sessionId: id, backend: z.enum(['cursor', 'claude', 'antigravity', 'pi', 'opencode']),
-    endpoint: z.enum(ACP_TOOL_CALL_ENDPOINTS), args: z.record(z.unknown()) }).strict(),
+    endpoint: z.enum(ACP_TOOL_CALL_ENDPOINTS), args: z.record(z.string(), z.unknown()) }).strict(),
   'dsh/sessionModels': z.object({ sessionId: id, backend: z.enum(['cursor', 'claude', 'antigravity', 'pi', 'opencode']) }).strict(),
   'dsh/selectModel': z.object({ sessionId: id, backend: z.enum(['cursor', 'claude', 'antigravity', 'pi', 'opencode']),
     model: id, reasoningEffort: id.optional() }).strict(),

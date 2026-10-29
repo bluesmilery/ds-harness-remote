@@ -1,5 +1,5 @@
 import { RemoteClientCore, remoteWorkspaceTypeAvailable } from '@dsh-remote/client-core'
-import { parseRemoteWorkspaceTypes } from '@dsh-remote/protocol'
+import { MAX_REMOTE_CAPABILITY_ENTRIES, parseRemoteWorkspaceTypes } from '@dsh-remote/protocol'
 import type { RemoteHostFeatures } from './client-runtime-contract.js'
 import { ClientModeError, isRecord } from './client-runtime-contract.js'
 
@@ -32,6 +32,7 @@ export async function probeRemoteHostFeatures(
     throw error
   }
   if (!isRecord(value) || !Array.isArray(value.capabilities)
+    || value.capabilities.length > MAX_REMOTE_CAPABILITY_ENTRIES
     || value.capabilities.some(capability => typeof capability !== 'string')) {
     throw new ClientModeError('INVALID_MESSAGE', 'The remote Host returned invalid transport capabilities.')
   }

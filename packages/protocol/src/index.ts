@@ -24,6 +24,9 @@ export const MAX_DEVICE_NAME_LENGTH = 128
 export const MAX_DEVICE_PLATFORM_LENGTH = 64
 export const MAX_DEVICE_VERSION_LENGTH = 64
 export const MAX_AUTH_TOKEN_LENGTH = 8 * 1024
+/** Maximum entries accepted in capability and workspace type advertisements. */
+export const MAX_REMOTE_CAPABILITY_ENTRIES = 128
+export const MAX_REMOTE_WORKSPACE_TYPE_ENTRIES = 32
 
 // ────────────────────────────────────────────────────────────────────────────
 // §24 Default limits
@@ -941,13 +944,17 @@ export const controlFrameSchema = z.object({
 
 const transportEnum = z.enum(['lan', 'p2p', 'turn', 'relay'])
 const selectedTransportEnum = z.enum(selectedTransports)
+const MAX_PROTOCOL_LIST_ENTRIES = 16
+const MAX_CAPABILITY_ENTRIES = MAX_REMOTE_CAPABILITY_ENTRIES
+const MAX_WORKSPACE_TYPE_ENTRIES = MAX_REMOTE_WORKSPACE_TYPE_ENTRIES
+const MAX_PREFERRED_TRANSPORT_ENTRIES = selectedTransports.length
 
 export const helloPayloadSchema = z.object({
   role: z.enum(['host', 'client']),
   deviceId: z.string().min(1),
   accessToken: z.string().min(1),
-  protocols: z.array(z.number().int().nonnegative().safe()).min(1).refine(uniqueNumbers),
-  capabilities: z.array(z.string().min(1)).refine(uniqueStrings),
+  protocols: z.array(z.number().int().nonnegative().safe()).min(1).max(MAX_PROTOCOL_LIST_ENTRIES).refine(uniqueNumbers),
+  capabilities: z.array(z.string().min(1)).max(MAX_CAPABILITY_ENTRIES).refine(uniqueStrings),
   clientVersion: z.string().optional(),
   harnessVersion: z.string().optional(),
 })
@@ -959,7 +966,7 @@ export const helloAckPayloadSchema = z.object({
   heartbeatIntervalMs: z.number().int().positive(),
   maxControlFrameBytes: z.number().int().positive().max(MAX_CONTROL_FRAME_BYTES),
   maxRelayFrameBytes: z.number().int().positive().max(MAX_RELAY_FRAME_BYTES),
-  capabilities: z.array(z.string().min(1)).refine(uniqueStrings).optional(),
+  capabilities: z.array(z.string().min(1)).max(MAX_CAPABILITY_ENTRIES).refine(uniqueStrings).optional(),
   webrtcEnabled: z.boolean().optional(),
   webrtcFallbackTimeoutMs: z.number().int().positive().optional(),
 })
@@ -972,12 +979,13 @@ export const remoteWorkspaceTypeDescriptionSchema = z.object({
 })
 
 export const harnessTransportDescriptionSchema = z.object({
-  capabilities: z.array(z.string().min(1)).refine(uniqueStrings),
-  workspaceTypes: z.array(remoteWorkspaceTypeDescriptionSchema).optional(),
+  capabilities: z.array(z.string().min(1)).max(MAX_CAPABILITY_ENTRIES).refine(uniqueStrings),
+  workspaceTypes: z.array(remoteWorkspaceTypeDescriptionSchema).max(MAX_WORKSPACE_TYPE_ENTRIES).optional(),
 })
 
 export function parseRemoteWorkspaceTypes(value: unknown): RemoteWorkspaceTypeDescription[] {
   if (!Array.isArray(value)) return []
+  if (value.length > MAX_WORKSPACE_TYPE_ENTRIES) return []
   const types: RemoteWorkspaceTypeDescription[] = []
   for (const item of value) {
     const result = remoteWorkspaceTypeDescriptionSchema.safeParse(item)
@@ -990,7 +998,7 @@ export function parseRemoteWorkspaceTypes(value: unknown): RemoteWorkspaceTypeDe
 
 export const connectRequestPayloadSchema = z.object({
   hostDeviceId: z.string().min(1),
-  preferredTransports: z.array(transportEnum).min(1),
+  preferredTransports: z.array(transportEnum).min(1).max(MAX_PREFERRED_TRANSPORT_ENTRIES),
 })
 
 export const connectIncomingPayloadSchema = z.object({
@@ -998,7 +1006,7 @@ export const connectIncomingPayloadSchema = z.object({
   clientDeviceId: z.string().min(1),
   clientIdentityKey: z.string().min(1),
   authorization: z.literal('account'),
-  preferredTransports: z.array(transportEnum).min(1),
+  preferredTransports: z.array(transportEnum).min(1).max(MAX_PREFERRED_TRANSPORT_ENTRIES),
 })
 
 export const connectAcceptedPayloadSchema = z.object({

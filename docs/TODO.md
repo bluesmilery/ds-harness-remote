@@ -45,7 +45,8 @@ RC.1 的源码适配与本地自动化验证见兼容性说明；不能替代真
   - 同日 16:20 覆盖安装后，保持现有省电设置；16:21 建立 P2P，约四分钟息屏后唤醒于 16:25:47 收到 control-error，16:25:50 已完成新加密连接并更新 connected 通知，聊天恢复，同一进程未退出。约 2.3 秒恢复通过；未修改电池优化白名单，息屏期间 wake lock 仍被禁用，不能将其记为持续联网或 15 分钟稳定性通过。
   - 同日后续系统日志确认小米息屏冻结：16:40:33.987 `Going to sleep`，16:40:39.696 以 `reason: greeze` 禁用本 App wake lock，16:40:39.699 同时记录 `Destroyed live tcp sockets for uids={10440}` 与 `frozen uid = 10440 reason=screen off`。约 5.7 秒即主动断开 TCP；16:40:40.981 唤醒、16:40:41.142 才向 JS 投递 control-error，16:40:44.332 重建 P2P。此前 16:21 与 16:35 两次息屏也在约 5.7 秒后以 greeze 禁用锁。该手机在 FGS/procState 4 下仍受厂商冻结，不能靠 JS 心跳/重连或普通部分唤醒锁保证息屏持续联网；用户要求保持省电设置，未修改白名单或厂商策略。尚需在用户选择的省电策略下验收，不能将唤醒重连成功记作后台保活成功。
 - [x] 修复 ACP/CodeX 异步结果隔离、归属回滚、旧 Prompt、OpenCode history reader、Pi 模型确认及文件预览内存限额；全仓 check、689 个测试及生产 build 通过。修复尚未发布。
-- [ ] 消除剩余 5 项依赖公告（4 high / 1 moderate）：Expo/xcode 的 uuid、Metro 的 image-size（2 项）及 braces、Expo CLI 的 node-forge。image-size/uuid 需要兼容升级；node-forge/braces 本轮 audit 尚无修复版本。不得直接覆盖不兼容大版本或将构建链依赖视为无风险。
+- [x] 修复 Plugin/Server/Protocol 的 Zod 高危公告：生产直接依赖升级至 `zod@4.6.7`，所有远程数组输入增加明确数量上限，能力发现与工作区目录解析在手动遍历前先做上限校验；协议回归覆盖超限且子项非法的输入。发布包不再包含 `zod@3`。
+- [ ] 继续处理 `pnpm audit --prod --registry=https://registry.npmjs.org` 报告的构建链依赖公告（当前仍为 4 high / 1 moderate / 1 low）：Expo/Metro 的 zod、image-size（2 项）、node-forge、uuid，以及 deepmerge。它们不进入 Plugin 生产 bundle；image-size/uuid 需要兼容升级，node-forge/deepmerge 当前无可用修复。不得把构建链依赖视为无风险。
 - [ ] 在 Windows、Android APK/真机、独立 Remote Web 与加密跨设备环境回归本轮断线/后端替换修复；本机 check/test/Hermes 构建不替代目标平台验收。
 
 ## Harness 0.2.1-rc.1

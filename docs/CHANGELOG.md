@@ -8,6 +8,9 @@ Android build 68.
 - Simplify the Remote settings layout by removing the unused Server address field and keeping account authorization details together.
 - Fix Remote panel refresh and close actions being blocked by the draggable panel header.
 - Keep ACP settings available while removing the unused add-workspace entry from the Remote settings flow.
+- Enable Remote Tools by default while preserving the setting to disable them, and keep Host discovery working when settings are unavailable.
+- Harden deadlines and size limits for large responses, search projections, and connection lifecycle cleanup.
+- Preserve CodeX session model metadata and stabilize settings writes during HMR reloads.
 
 ### 中文
 
@@ -15,6 +18,9 @@ Android build 68.
 - 简化 Remote 设置布局，移除不再需要的 Server 地址字段，并将账号授权说明与账号值放在同一行。
 - 修复 Remote 面板弹出后刷新和关闭按钮有时无法点击的问题。
 - 保留 ACP 设置入口，移除 Remote 设置流程中不再使用的新增工作区入口。
+- 默认开启 Remote Tools，并在设置中保留关闭开关；修复设置不可用时仍能发现 Host 的问题。
+- 加固大响应传输、搜索投影和连接生命周期的超时与大小边界，避免异常远端数据拖住连接。
+- 修复 CodeX 会话模型元数据恢复，并稳定 HMR 重载期间的设置写入。
 
 ## 0.5.22 — 2026-10-28
 
