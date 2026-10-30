@@ -296,7 +296,7 @@ Yes. Multiple clients can connect concurrently, with RPC calls and streams isola
 
 **Which Harness versions are supported?**
 
-The current baseline is `dsh-v0.2.1-rc.1`, compatible with `0.2.0` rc.2 / rc.1. See the [compatibility guide](docs/compatibility.md).
+The current baseline is `dsh-v0.2.1-rc.5`, compatible with `0.2.0` rc.2 / rc.1. See the [compatibility guide](docs/compatibility.md).
 
 Harness `0.1.1-rc.2` ApiProxy support has been removed from the Host plugin, its bundled Remote client, and Android. Use a Host with the official Typert Remote carrier; Hosts that only provide ApiProxy or lack capability discovery are rejected, with no fallback.
 
@@ -335,7 +335,7 @@ This project encrypts and transmits only the messages needed by the native Harne
 - [Changelog](docs/CHANGELOG.md)
 - [Privacy policy](docs/PRIVACY.md)
 - [Android guide](apps/android/README.md)
-- The current development baseline is `dsh-v0.2.1-rc.1`; validation scope is documented in [the compatibility guide](docs/compatibility.md).
+- The current development baseline is `dsh-v0.2.1-rc.5`; validation scope is documented in [the compatibility guide](docs/compatibility.md).
 
 ## Links
 

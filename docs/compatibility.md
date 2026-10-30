@@ -2,7 +2,7 @@
 
 ## Current compatibility targets (2026-10-25)
 
-The development baseline is `dsh-v0.2.1-rc.1`, retaining the previous `dsh-v0.2.0-rc.2` (and rc.1) official Typert / Session V3 carrier. Peer ranges explicitly admit `0.2.1` and `0.2.2` prereleases and stable releases. A future `0.2.2` RC with the same official carrier contract requires no version-only package edit; that future runtime has not been validated.
+The development baseline is `dsh-v0.2.1-rc.5`, retaining the previous `dsh-v0.2.0-rc.2` (and rc.1) official Typert / Session V3 carrier. Peer ranges explicitly admit `0.2.1` and `0.2.2` prereleases and stable releases. A future `0.2.2` RC with the same official carrier contract requires no version-only package edit; that future runtime has not been validated.
 
 Harness `0.1.1-rc.2` ApiProxy support has been removed from the Host plugin, its bundled Remote client, and Android. Use a Host with the official Typert Remote carrier; ApiProxy-only Hosts and missing capability discovery are rejected. CodeX/ACP keep their independent data planes and use Typert for Desktop projection. This change does not update the standalone VS Code client or the independent Remote Web repository.
 
