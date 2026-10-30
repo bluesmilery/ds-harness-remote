@@ -181,6 +181,8 @@ export class HostServerConnection {
         this.logger.warn('server control connection failed', {
           code, retryable: isRetryable(error),
           ...(error instanceof ServerApiError && error.phase !== undefined ? { phase: error.phase } : {}),
+          ...(error instanceof ServerApiError && error.status !== undefined ? { status: error.status } : {}),
+          ...(error instanceof ServerApiError && error.reason !== undefined ? { reason: error.reason } : {}),
         })
         if (TERMINAL_AUTH_ERRORS.has(code)) {
           this.logger.warn(code === 'CONNECTION_REPLACED'

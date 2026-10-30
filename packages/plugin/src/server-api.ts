@@ -351,7 +351,15 @@ export class HostServerApi {
       })
     } catch (error) {
       if (error instanceof ServerApiError) {
-        throw new ServerApiError(error.code, error.message, error.retryable, error.status, 'credential_refresh')
+        // A delayed rejection must not discard credentials another writer saved.
+        if (error.code === 'AUTH_INVALID') {
+          const latest = await this.store.load(this.baseUrl, identity.deviceId)
+          if (latest !== undefined && latest.refreshToken !== stored.refreshToken &&
+              latest.refreshTokenExpiresAt > Date.now() && latest.accessTokenExpiresAt > Date.now() + 30_000) {
+            return latest
+          }
+        }
+        throw new ServerApiError(error.code, error.message, error.retryable, error.status, 'credential_refresh', error.reason)
       }
       throw error
     }
@@ -483,15 +491,17 @@ export class HostServerApi {
         throw new ServerApiError(
           responseErrorCode(response.status, envelope.error?.code),
           typeof envelope.error?.message === 'string' ? envelope.error.message : 'The Server rejected the request.',
-          envelope.error?.retryable === true || response.status >= 500,
+          envelope.error?.retryable === true || response.status >= 500 || response.status === 429,
           response.status,
+          undefined,
+          'http_error',
         )
       }
       return body as TResult
     } catch (error) {
       if (this.lifetime.signal.aborted) throw this.lifetime.signal.reason
       if (error instanceof ServerApiError) throw error
-      throw new ServerApiError('CONNECTION_FAILED', error instanceof Error ? error.message : 'Server request failed.', true)
+      throw new ServerApiError('CONNECTION_FAILED', 'Server request failed.', true, undefined, undefined, controller.signal.aborted ? 'timeout' : 'network_error')
     } finally {
       clearTimeout(timer)
     }
@@ -536,6 +546,7 @@ export class ServerApiError extends Error {
     readonly retryable: boolean,
     readonly status?: number,
     readonly phase?: 'credential_refresh',
+    readonly reason?: 'http_error' | 'invalid_json' | 'timeout' | 'network_error',
   ) { super(message) }
 }
 
@@ -570,7 +581,9 @@ async function parseBody(response: Response): Promise<unknown> {
   try {
     return JSON.parse(text)
   } catch {
-    throw new ServerApiError('INVALID_MESSAGE', 'The Server returned invalid JSON.', false, response.status)
+    throw new ServerApiError(response.ok ? 'INVALID_MESSAGE' : responseErrorCode(response.status, undefined),
+      'The Server returned invalid JSON.', response.ok || response.status >= 500 || response.status === 429,
+      response.status, undefined, 'invalid_json')
   }
 }
 

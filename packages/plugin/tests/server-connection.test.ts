@@ -574,6 +574,7 @@ describe('HostServerConnection', () => {
                     code: 'AUTH_INVALID',
                     retryable: false,
                     phase: 'credential_refresh',
+                    status: 401,
                   })
               }
             } finally {

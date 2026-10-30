@@ -674,3 +674,60 @@ function errorJson(code: string, message: string, status: number): Response {
     error: { code, message, retryable: false },
   }), { status, headers: { 'content-type': 'application/json' } })
 }
+
+it('preserves credentials through gateway failures and recovers on the next attempt', async () => {
+  await runScenarios([502, 503, 504, 429].map(status => ({
+    name: `HTML gateway response ${status}`,
+    run: async () => {
+      const directory = await mkdtemp(join(tmpdir(), 'dsh-gateway-refresh-'))
+      directories.push(directory)
+      const identity = hostIdentity()
+      const store = new ServerCredentialStore(directory)
+      const initial = await store.save({ serverUrl: 'https://dsh.r2049.cn', deviceId: identity.deviceId,
+        authorizationMethod: 'account', ...tokens({ accessTokenExpiresAt: Date.now() - 1 }) })
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(new Response('<html>gateway unavailable</html>', { status }))
+        .mockResolvedValueOnce(json(tokens({ refreshToken: 'recovered-refresh-value' })))
+      const api = new HostServerApi('https://dsh.r2049.cn', store, fetchMock)
+      await expect(api.authenticate(identity)).rejects.toMatchObject({
+        code: status === 429 ? 'RATE_LIMITED' : 'CONNECTION_FAILED', status,
+        retryable: true, phase: 'credential_refresh', reason: 'invalid_json',
+      })
+      expect(await store.load('https://dsh.r2049.cn', identity.deviceId)).toEqual(initial)
+      expect((await api.authenticate(identity)).refreshToken).toBe('recovered-refresh-value')
+      const bodies = fetchMock.mock.calls.map(call => JSON.parse(call[1].body as string))
+      expect(bodies.every(body => body.refreshToken === initial.refreshToken)).toBe(true)
+    },
+  })), cleanupContract1)
+})
+
+it('does not treat a 503 authorization-shaped envelope as permanent authorization failure', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dsh-busy-refresh-'))
+  directories.push(directory)
+  const identity = hostIdentity()
+  const store = new ServerCredentialStore(directory)
+  await store.save({ serverUrl: 'https://dsh.r2049.cn', deviceId: identity.deviceId,
+    authorizationMethod: 'account', ...tokens({ accessTokenExpiresAt: Date.now() - 1 }) })
+  const api = new HostServerApi('https://dsh.r2049.cn', store,
+    vi.fn(async () => errorJson('AUTH_INVALID', 'server internal failure', 503)) as unknown as typeof fetch)
+  await expect(api.authenticate(identity)).rejects.toMatchObject({
+    code: 'CONNECTION_FAILED', retryable: true, status: 503, phase: 'credential_refresh', reason: 'http_error',
+  })
+})
+
+it('uses newly saved credentials after a delayed refresh rejection without retrying the rejected token', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dsh-late-refresh-'))
+  directories.push(directory)
+  const identity = hostIdentity()
+  const store = new ServerCredentialStore(directory)
+  const initial = await store.save({ serverUrl: 'https://dsh.r2049.cn', deviceId: identity.deviceId,
+    authorizationMethod: 'account', ...tokens({ accessTokenExpiresAt: Date.now() - 1 }) })
+  const newer = { ...initial, ...tokens({ accessToken: 'newer-access-token-value', refreshToken: 'newer-refresh-token-value' }) }
+  const fetchMock = vi.fn(async () => {
+    await store.save(newer)
+    return errorJson('AUTH_INVALID', 'obsolete refresh token', 401)
+  })
+  const api = new HostServerApi('https://dsh.r2049.cn', store, fetchMock as unknown as typeof fetch)
+  expect((await api.authenticate(identity)).refreshToken).toBe(newer.refreshToken)
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+})
