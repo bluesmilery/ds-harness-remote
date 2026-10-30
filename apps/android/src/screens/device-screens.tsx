@@ -1145,7 +1145,7 @@ function createStyles(colors: ThemeColors) {
   compactSessionTitle: { ...type.smallStrong, color: colors.ink },
   compactSessionMeta: { ...type.caption, color: colors.muted, marginTop: 2 },
   connectionBack: { position: 'absolute', top: spacing.sm, left: spacing.sm, zIndex: 2 },
-  connectionHero: { alignItems: 'center', paddingTop: spacing.xxxl, paddingBottom: spacing.xxl, gap: spacing.xl },
+  connectionHero: { alignItems: 'center', paddingTop: spacing.xxxl + spacing.xl, paddingBottom: spacing.xxl, gap: spacing.xl },
   connectionHeroCompact: { paddingTop: spacing.lg, paddingBottom: spacing.md, gap: spacing.sm },
   connectionHeading: { alignSelf: 'stretch', alignItems: 'center', gap: spacing.xs },
   connectionStatusLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
