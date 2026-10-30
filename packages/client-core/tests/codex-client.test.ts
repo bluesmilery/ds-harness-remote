@@ -246,6 +246,38 @@ describe('Codex display projection', () => {
     expect(state.items[0]).toMatchObject({ text: 'Hello world.', status: 'completed' })
   })
 
+  it('clears an active turn when the App Server reports an idle or system error status', () => {
+    let state = createCodexTimelineState({
+      id: 'thr_status', cwd: '/workspace/repo', createdAt: 1, updatedAt: 2,
+      status: { type: 'idle' }, turns: [],
+    })!
+    state = reduceCodexTimelineFrame(state, {
+      method: 'turn/started',
+      params: { turn: { id: 'turn_status', status: 'inProgress', items: [] } },
+    })
+    expect(state.activeTurnId).toBe('turn_status')
+
+    state = reduceCodexTimelineFrame(state, {
+      method: 'thread/status/changed',
+      params: { status: { type: 'idle' } },
+    })
+    expect(state).toMatchObject({ session: { status: 'idle' } })
+    expect(state.activeTurnId).toBeUndefined()
+    expect(state.items.every(item => item.status !== 'running')).toBe(true)
+
+    state = reduceCodexTimelineFrame(state, {
+      method: 'turn/started',
+      params: { turn: { id: 'turn_error', status: 'inProgress', items: [] } },
+    })
+    state = reduceCodexTimelineFrame(state, {
+      method: 'thread/status/changed',
+      params: { status: { type: 'systemError' } },
+    })
+    expect(state).toMatchObject({ session: { status: 'failed' } })
+    expect(state.activeTurnId).toBeUndefined()
+    expect(state.items.every(item => item.status !== 'running')).toBe(true)
+  })
+
   it('merges command, file-change, and approval-resolution notifications by native item id', () => {
     let state = createCodexTimelineState({
       id: 'thr_123', cwd: '/workspace/repo', createdAt: 1, updatedAt: 2, turns: [],

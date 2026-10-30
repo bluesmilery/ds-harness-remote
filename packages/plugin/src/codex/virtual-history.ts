@@ -144,9 +144,7 @@ export function projectCodexNativeHistory(
     append('step/end', { turn: turnNumber, step: 1 }, normalizeTime(turn.updatedAt) || normalizeTime(turn.completedAt) || time)
     append('turn/end', {
       turn: turnNumber,
-      reason: turn.status === 'failed' || turn.error !== undefined && turn.error !== null
-        ? { kind: 'error', error: { message: 'CodeX turn failed.', code: 'codex-turn-failed' } }
-        : { kind: 'completed' },
+      reason: turnEndReason(turn),
     }, normalizeTime(turn.updatedAt) || normalizeTime(turn.completedAt) || time)
   }
   const projected = projectCodexThread(thread)
@@ -165,6 +163,16 @@ export function projectCodexNativeHistory(
     nextTurn: turnNumber,
     ...(active === undefined ? {} : { activeTurnId: active }),
   }
+}
+
+function turnEndReason(turn: JsonRecord): JsonRecord {
+  if (turn.status === 'failed' || turn.error !== undefined && turn.error !== null) {
+    return { kind: 'error', error: { message: 'CodeX turn failed.', code: 'codex-turn-failed' } }
+  }
+  if (turn.status === 'interrupted' || turn.status === 'cancelled' || turn.status === 'canceled' || turn.status === 'aborted') {
+    return { kind: 'interrupted' }
+  }
+  return { kind: 'completed' }
 }
 
 export function paginateCodexNativeHistory(

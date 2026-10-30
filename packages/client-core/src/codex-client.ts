@@ -415,7 +415,26 @@ export function reduceCodexTimelineFrame(
 ): CodexTimelineState {
   const params = isRecord(frame.params) ? frame.params : {}
   if (frame.method === 'thread/status/changed') {
-    return { ...state, session: { ...state.session, status: projectThreadStatus(params.status) } }
+    const status = projectThreadStatus(params.status)
+    // An inactive/system-error status is terminal evidence for the current
+    // turn even if the App Server omits or delays turn/completed. Clear the
+    // turn handle so a later approval resolution cannot revive `running`.
+    if (status === 'idle' || status === 'failed') {
+      const terminalItemStatus = status === 'failed' ? 'failed' as const : 'completed' as const
+      const next = {
+        ...state,
+        session: { ...state.session, status },
+        // Some App Server failure paths report only thread/status/changed and
+        // omit turn/completed. Settle transient rows so the UI cannot keep an
+        // assistant spinner or running tool forever.
+        items: state.items.map(item => item.status === 'running'
+          ? { ...item, status: terminalItemStatus }
+          : item),
+      }
+      delete next.activeTurnId
+      return next
+    }
+    return { ...state, session: { ...state.session, status } }
   }
   if (frame.method === 'thread/name/updated' && typeof params.threadName === 'string') {
     return { ...state, session: { ...state.session, title: params.threadName } }

@@ -297,9 +297,7 @@ export class CodexLiveProjection {
       }
       this.pushEvent(follow, 'turn/end', {
         turn: follow.turn,
-        reason: turn.status === 'failed' || turn.error !== undefined && turn.error !== null
-          ? { kind: 'error', error: { message: 'CodeX turn failed.', code: 'codex-turn-failed' } }
-          : { kind: 'completed' },
+        reason: turnEndReason(turn),
       })
       this.context.emitRemoteEvent('api-session/status', [follow.sessionId, false])
       this.context.emitRemoteEvent('api-session/activity', [follow.sessionId, Date.now()])
@@ -308,7 +306,10 @@ export class CodexLiveProjection {
       // A burst of completed turns should publish from one short-lived
       // catalog snapshot instead of starting a full project/thread scan for
       // every follow at once.
-      void this.context.refreshAndPublishWorkspaces()
+      // Completion must observe a fresh upstream catalog. Reusing the short
+      // catalog cache here can publish the pre-completion `running` snapshot
+      // after the authoritative turn/end event and make clients look stuck.
+      void this.context.refreshAndPublishWorkspaces(true)
       return
     }
     if (frame.method === 'item/commandExecution/requestApproval'
@@ -597,4 +598,14 @@ export class CodexLiveProjection {
     follow.queue.close()
     this.context.emitRemoteEvent('api-session/status', [follow.sessionId, false])
   }
+}
+
+function turnEndReason(turn: JsonRecord): JsonRecord {
+  if (turn.status === 'failed' || turn.error !== undefined && turn.error !== null) {
+    return { kind: 'error', error: { message: 'CodeX turn failed.', code: 'codex-turn-failed' } }
+  }
+  if (turn.status === 'interrupted' || turn.status === 'cancelled' || turn.status === 'canceled' || turn.status === 'aborted') {
+    return { kind: 'interrupted' }
+  }
+  return { kind: 'completed' }
 }

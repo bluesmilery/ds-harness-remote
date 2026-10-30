@@ -578,6 +578,20 @@ export class CodexRemoteDomain {
     }
     if (message.method === 'thread/closed' && threadId !== undefined) this.permissionPresets.delete(threadId)
     if (message.method === 'turn/completed' && threadId !== undefined) this.turnOwners.delete(threadId)
+    if (message.method === 'thread/status/changed' && threadId !== undefined
+      && isTerminalThreadStatus(message.params)) {
+      // Some App Server failure/interruption paths publish only the terminal
+      // Thread status and omit turn/completed. Release the Host-side writer
+      // lease as soon as the authoritative status is no longer active, or a
+      // later Prompt can be rejected as owned by a dead connection.
+      this.turnOwners.delete(threadId)
+      for (const [handle, approval] of this.approvals) {
+        if (approval.threadId !== threadId) continue
+        this.approvals.delete(handle)
+        void this.appServer?.respond(approval.upstreamId, { decision: 'decline' }).catch(() => undefined)
+      }
+      this.scheduleApprovalExpiry()
+    }
     if (message.method === 'turn/started' && threadId !== undefined) {
       const owner = this.turnOwners.get(threadId)
       const turnId = extractTurnId(message.params)
@@ -1415,6 +1429,11 @@ function extractThreadId(params: unknown): string | undefined {
   if (isRecord(params.thread) && typeof params.thread.id === 'string') return params.thread.id
   if (isRecord(params.turn) && typeof params.turn.threadId === 'string') return params.turn.threadId
   return undefined
+}
+
+function isTerminalThreadStatus(params: unknown): boolean {
+  if (!isRecord(params) || !isRecord(params.status) || typeof params.status.type !== 'string') return false
+  return params.status.type !== 'active'
 }
 
 function optionalInteger(value: unknown): number | undefined {

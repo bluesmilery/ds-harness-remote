@@ -993,6 +993,28 @@ describe('CodexRemoteDomain', () => {
       params: { threadId: 'allowed-thread', input: [{ type: 'text', text: 'Compete' }] },
     })).rejects.toMatchObject({ code: 'CODEX_TURN_OWNED' })
 
+    // A terminal Thread status is sufficient to release the writer lease;
+    // not every App Server failure path emits turn/completed afterwards.
+    app.emit({
+      kind: 'notification',
+      method: 'thread/status/changed',
+      params: { threadId: 'allowed-thread', status: { type: 'systemError' } },
+    })
+    await flush()
+    await expect(peerTwo.call({
+      method: 'turn/start',
+      params: { threadId: 'allowed-thread', input: [{ type: 'text', text: 'Retry after failure' }] },
+    })).resolves.toMatchObject({ turn: { id: 'turn-1' } })
+    app.emit({
+      kind: 'notification',
+      method: 'turn/completed',
+      params: { threadId: 'allowed-thread', turn: { id: 'turn-1', status: 'completed', items: [] } },
+    })
+    await peerOne.call({
+      method: 'turn/start',
+      params: { threadId: 'allowed-thread', input: [{ type: 'text', text: 'Continue' }] },
+    })
+
     app.emit({
       kind: 'request',
       id: 91,
