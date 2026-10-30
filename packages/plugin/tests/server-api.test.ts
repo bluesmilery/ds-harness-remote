@@ -445,8 +445,8 @@ describe('HostServerApi', () => {
       { name: 'Server outage with misleading auth code', response: errorJson('AUTH_INVALID', 'unavailable', 503), code: 'CONNECTION_FAILED' },
       { name: 'network failure', response: new Error('offline'), code: 'CONNECTION_FAILED' },
       { name: 'refresh outage', response: errorJson('AUTH_INVALID', 'unavailable', 503), code: 'CONNECTION_FAILED', expiredAccess: true },
-      { name: 'unclassified unauthorized response', response: json({}, 401), code: 'REQUEST_REJECTED' },
-      { name: 'unclassified forbidden response', response: json({}, 403), code: 'REQUEST_REJECTED' },
+      { name: 'unclassified unauthorized response', response: json({}, 401), code: 'CONNECTION_FAILED', retryable: true },
+      { name: 'unclassified forbidden response', response: json({}, 403), code: 'CONNECTION_FAILED', retryable: true },
       { name: 'auth code on unrelated status', response: errorJson('DEVICE_REVOKED', 'unexpected', 400), code: 'INVALID_MESSAGE' },
       { name: 'explicit credential rejection', response: errorJson('AUTH_INVALID', 'expired', 401), code: 'AUTH_INVALID' },
     ].map(scenario => ({ name: scenario.name, run: async () => {
@@ -465,7 +465,9 @@ describe('HostServerApi', () => {
         return scenario.response
       }) as unknown as typeof fetch)
       api.bindIdentity(identity)
-      await expect(api.listDevices()).rejects.toMatchObject({ code: scenario.code })
+      await expect(api.listDevices()).rejects.toMatchObject({
+        code: scenario.code, ...('retryable' in scenario ? { retryable: scenario.retryable } : {}),
+      })
       await expect(store.load('https://dsh.r2049.cn', identity.deviceId)).resolves.toMatchObject({
         accessToken: 'access-token-value',
         refreshToken: 'refresh-token-value',

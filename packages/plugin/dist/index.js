@@ -91725,7 +91725,13 @@ var HostServerApi = class {
       });
     } catch (error62) {
       if (error62 instanceof ServerApiError) {
-        throw new ServerApiError(error62.code, error62.message, error62.retryable, error62.status, "credential_refresh");
+        if (error62.code === "AUTH_INVALID") {
+          const latest = await this.store.load(this.baseUrl, identity3.deviceId);
+          if (latest !== void 0 && latest.refreshToken !== stored.refreshToken && latest.refreshTokenExpiresAt > Date.now() && latest.accessTokenExpiresAt > Date.now() + 3e4) {
+            return latest;
+          }
+        }
+        throw new ServerApiError(error62.code, error62.message, error62.retryable, error62.status, "credential_refresh", error62.reason);
       }
       throw error62;
     }
@@ -91831,19 +91837,31 @@ var HostServerApi = class {
       const body = await parseBody(response);
       signal.throwIfAborted();
       if (!response.ok) {
-        const envelope = body ?? {};
+        const envelope = isErrorEnvelope(body) ? body : void 0;
+        if ((response.status === 401 || response.status === 403) && envelope === void 0) {
+          throw new ServerApiError(
+            "CONNECTION_FAILED",
+            "The Server returned an invalid authorization response.",
+            true,
+            response.status,
+            void 0,
+            "invalid_error_envelope"
+          );
+        }
         throw new ServerApiError(
-          responseErrorCode(response.status, envelope.error?.code),
-          typeof envelope.error?.message === "string" ? envelope.error.message : "The Server rejected the request.",
-          envelope.error?.retryable === true || response.status >= 500,
-          response.status
+          responseErrorCode(response.status, envelope?.error.code),
+          envelope?.error.message ?? "The Server rejected the request.",
+          envelope?.error.retryable === true || response.status >= 500 || response.status === 429,
+          response.status,
+          void 0,
+          "http_error"
         );
       }
       return body;
     } catch (error62) {
       if (this.lifetime.signal.aborted) throw this.lifetime.signal.reason;
       if (error62 instanceof ServerApiError) throw error62;
-      throw new ServerApiError("CONNECTION_FAILED", error62 instanceof Error ? error62.message : "Server request failed.", true);
+      throw new ServerApiError("CONNECTION_FAILED", "Server request failed.", true, void 0, void 0, controller.signal.aborted ? "timeout" : "network_error");
     } finally {
       clearTimeout(timer2);
     }
@@ -91874,12 +91892,13 @@ var ClientServerApi = class extends HostServerApi {
   }
 };
 var ServerApiError = class extends Error {
-  constructor(code, message, retryable, status2, phase) {
+  constructor(code, message, retryable, status2, phase, reason) {
     super(message);
     this.code = code;
     this.retryable = retryable;
     this.status = status2;
     this.phase = phase;
+    this.reason = reason;
   }
 };
 function validateTokens(value) {
@@ -91902,13 +91921,28 @@ function validateWebLogin(value) {
     isAdmin: item.isAdmin
   };
 }
+function isErrorEnvelope(value) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const error62 = value.error;
+  if (typeof error62 !== "object" || error62 === null || Array.isArray(error62)) return false;
+  const fields = error62;
+  return typeof fields.code === "string" && fields.code.length > 0 && typeof fields.message === "string" && typeof fields.retryable === "boolean";
+}
 async function parseBody(response) {
   const text = await response.text();
   if (text.length === 0) return void 0;
   try {
     return JSON.parse(text);
   } catch {
-    throw new ServerApiError("INVALID_MESSAGE", "The Server returned invalid JSON.", false, response.status);
+    const unstructuredAuth = response.status === 401 || response.status === 403;
+    throw new ServerApiError(
+      unstructuredAuth ? "CONNECTION_FAILED" : response.ok ? "INVALID_MESSAGE" : responseErrorCode(response.status, void 0),
+      "The Server returned invalid JSON.",
+      unstructuredAuth || response.ok || response.status >= 500 || response.status === 429,
+      response.status,
+      void 0,
+      "invalid_json"
+    );
   }
 }
 function responseErrorCode(status2, serverCode) {
@@ -103529,7 +103563,9 @@ var HostServerConnection = class {
         this.logger.warn("server control connection failed", {
           code,
           retryable: isRetryable(error62),
-          ...error62 instanceof ServerApiError && error62.phase !== void 0 ? { phase: error62.phase } : {}
+          ...error62 instanceof ServerApiError && error62.phase !== void 0 ? { phase: error62.phase } : {},
+          ...error62 instanceof ServerApiError && error62.status !== void 0 ? { status: error62.status } : {},
+          ...error62 instanceof ServerApiError && error62.reason !== void 0 ? { reason: error62.reason } : {}
         });
         if (TERMINAL_AUTH_ERRORS.has(code)) {
           this.logger.warn(code === "CONNECTION_REPLACED" ? "Another instance is using this Host identity. Stop it or use a separate DSH_HOME; automatic reconnect is paused." : code === "SERVER_CREDENTIALS_BUSY" ? "Credential refresh is locked. Stop other instances; after a crash, stop all instances before removing server-credentials.json.refresh-lock and authorizing again." : "Host authorization failed. Run /remote login or authorize this Host again in Remote settings.");
