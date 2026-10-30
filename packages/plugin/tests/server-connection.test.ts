@@ -6,10 +6,14 @@ import type { ConnectionController } from '../src/connection-controller.js'
 import type { ResolvedConfig } from '../src/config.js'
 import type { HostIdentity, IdentityStore, TrustedPeer } from '../src/identity-store.js'
 import type { SafeLogger } from '../src/logging.js'
-import { ServerApiError, type HostServerApi } from '../src/server-api.js'
+import { ServerApiError, HostServerApi } from '../src/server-api.js'
 import { HostServerConnection } from '../src/server-connection.js'
 import type { AuthenticatedPeerChannel } from '../src/types.js'
 import { PLUGIN_VERSION } from '../src/version.js'
+import { ServerCredentialStore } from '../src/server-credentials.js'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { RtcPeerConnectionFactory } from '@dsh-remote/webrtc'
 
 class FakeWebSocket {
@@ -1104,4 +1108,96 @@ describe('pinned peer identity rotation', () => {
     expect(types).not.toContain('connect.accepted')
     expect(trustPeer).not.toHaveBeenCalled()
   })
+})
+
+it('reconnects after temporary 1013 handshakes without spending another credential refresh', async () => {
+  await runScenarios([
+    { name: 'temporary failures before authentication recovery', closes: [1013, 1013, 4002] },
+    { name: 'temporary failures after authentication recovery', closes: [4002, 1013, 1013] },
+    { name: 'only temporary failures', closes: [1013, 1013] },
+  ].map(row => ({ name: row.name, run: async () => {
+    const sockets: FakeWebSocket[] = []
+    let accessToken = 'old-access-value'
+    const api = {
+      baseUrl: 'https://dsh.r2049.cn',
+      authenticate: vi.fn(async () => ({ accessToken })),
+      refreshCredentials: vi.fn(async () => { accessToken = 'new-access-value' }),
+      clearAuthorization: vi.fn(),
+    }
+    const server = new HostServerConnection(
+      { ...config(), reconnect: { enabled: true, initialDelayMs: 1, maxDelayMs: 1, jitter: 0 } },
+      { schemaVersion: 1, deviceId: 'host-temporary', name: 'Host', fingerprint: 'HOST', ...generateKeyPair() },
+      {} as IdentityStore, api as unknown as HostServerApi,
+      { close: vi.fn(async () => undefined) } as unknown as ConnectionController,
+      logger(), () => { const socket = new FakeWebSocket(); sockets.push(socket); return socket },
+    )
+    try {
+      server.start()
+      for (const [index, code] of row.closes.entries()) {
+        await vi.waitFor(() => expect(sockets).toHaveLength(index + 1))
+        sockets[index]!.open()
+        sockets[index]!.close(code)
+      }
+      await vi.waitFor(() => expect(sockets).toHaveLength(row.closes.length + 1))
+      const last = sockets.at(-1)!
+      last.open()
+      expect(JSON.parse(last.sent[0]!).payload.accessToken).toBe(accessToken)
+      last.receive(createControlFrame('hello.ack', helloAck('recovered-after-startup')))
+      await vi.waitFor(() => expect(server.isOnline()).toBe(true))
+      expect(api.refreshCredentials).toHaveBeenCalledTimes(row.closes.filter(code => code === 4002).length)
+      expect(api.clearAuthorization).not.toHaveBeenCalled()
+      expect(server.lastError()).toBeUndefined()
+    } finally { await server.stop() }
+  } })))
+})
+
+it('keeps reconnecting through non-protocol gateway 401 responses and becomes online after recovery', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dsh-connection-gateway-'))
+  let server: HostServerConnection | undefined
+  try {
+    const identity: HostIdentity = {
+      schemaVersion: 1, deviceId: 'host-gateway', name: 'Host', fingerprint: 'HOST', ...generateKeyPair(),
+    }
+    const store = new ServerCredentialStore(directory)
+    const initial = await store.save({
+      serverUrl: 'https://dsh.r2049.cn', deviceId: identity.deviceId, authorizationMethod: 'account',
+      accessToken: 'old-access-token-value', accessTokenExpiresAt: Date.now() - 1,
+      refreshToken: 'old-refresh-token-value', refreshTokenExpiresAt: Date.now() + 86400000,
+    })
+    const responses = [
+      new Response('<html>gateway challenge</html>', { status: 401 }),
+      new Response('', { status: 401 }),
+      new Response('{"detail":"gateway startup"}', { status: 401 }),
+      new Response(JSON.stringify({
+        accessToken: 'recovered-access-token', accessTokenExpiresAt: Date.now() + 600000,
+        refreshToken: 'recovered-refresh-token', refreshTokenExpiresAt: initial.refreshTokenExpiresAt,
+      }), { status: 200 }),
+    ]
+    const fetcher = vi.fn(async () => {
+      expect(await store.load('https://dsh.r2049.cn', identity.deviceId)).toEqual(initial)
+      return responses.shift()!
+    })
+    const api = new HostServerApi('https://dsh.r2049.cn', store, fetcher)
+    const sockets: FakeWebSocket[] = []
+    const logs = logger()
+    server = new HostServerConnection(
+      { ...config(), reconnect: { enabled: true, initialDelayMs: 1, maxDelayMs: 1, jitter: 0 } },
+      identity, {} as IdentityStore, api,
+      { close: vi.fn(async () => undefined) } as unknown as ConnectionController,
+      logs, () => { const socket = new FakeWebSocket(); sockets.push(socket); return socket },
+    )
+    server.start()
+    await vi.waitFor(() => expect(sockets).toHaveLength(1))
+    sockets[0]!.open()
+    expect(JSON.parse(sockets[0]!.sent[0]!).payload.accessToken).toBe('recovered-access-token')
+    sockets[0]!.receive(createControlFrame('hello.ack', helloAck('gateway-recovered')))
+    await vi.waitFor(() => expect(server!.isOnline()).toBe(true))
+    expect(fetcher).toHaveBeenCalledTimes(4)
+    expect(responses).toHaveLength(0)
+    expect(logs.warn).not.toHaveBeenCalledWith('server control connection failed', expect.objectContaining({ code: 'AUTH_INVALID' }))
+    expect((await store.load('https://dsh.r2049.cn', identity.deviceId))?.refreshToken).toBe('recovered-refresh-token')
+  } finally {
+    await server?.stop()
+    await rm(directory, { recursive: true, force: true })
+  }
 })

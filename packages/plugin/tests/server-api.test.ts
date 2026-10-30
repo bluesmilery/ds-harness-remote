@@ -731,3 +731,38 @@ it('uses newly saved credentials after a delayed refresh rejection without retry
   expect((await api.authenticate(identity)).refreshToken).toBe(newer.refreshToken)
   expect(fetchMock).toHaveBeenCalledTimes(1)
 })
+
+it('retries unstructured authorization responses but preserves explicit protocol rejections', async () => {
+  const responses = [
+    { name: 'HTML 401', status: 401, body: '<html>gateway challenge</html>', reason: 'invalid_json' },
+    { name: 'empty 401', status: 401, body: '', reason: 'invalid_error_envelope' },
+    { name: 'gateway JSON 401', status: 401, body: '{"detail":"gateway unavailable"}', reason: 'invalid_error_envelope' },
+    { name: 'incomplete envelope', status: 401, body: '{"error":{"code":"AUTH_INVALID"}}', reason: 'invalid_error_envelope' },
+    { name: 'null JSON', status: 401, body: 'null', reason: 'invalid_error_envelope' },
+    { name: 'HTML 403', status: 403, body: '<html>gateway challenge</html>', reason: 'invalid_json' },
+    { name: 'empty 403', status: 403, body: '', reason: 'invalid_error_envelope' },
+    { name: 'protocol invalid token', status: 401, body: JSON.stringify({ error: { code: 'AUTH_INVALID', message: 'obsolete token', retryable: false } }), terminal: 'AUTH_INVALID' },
+    { name: 'protocol revoked device', status: 403, body: JSON.stringify({ error: { code: 'DEVICE_REVOKED', message: 'revoked', retryable: false } }), terminal: 'DEVICE_REVOKED' },
+  ]
+  await runScenarios(responses.map(row => ({ name: row.name, run: async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'dsh-auth-envelope-'))
+    directories.push(directory)
+    const identity = hostIdentity()
+    const store = new ServerCredentialStore(directory)
+    const initial = await store.save({ serverUrl: 'https://dsh.r2049.cn', deviceId: identity.deviceId,
+      authorizationMethod: 'account', ...tokens({ accessTokenExpiresAt: Date.now() - 1 }) })
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(row.body, { status: row.status }))
+      .mockResolvedValueOnce(json(tokens({ refreshToken: 'recovered-refresh-value' })))
+    const api = new HostServerApi('https://dsh.r2049.cn', store, fetchMock)
+    await expect(api.authenticate(identity)).rejects.toMatchObject({
+      code: row.terminal ?? 'CONNECTION_FAILED', retryable: row.terminal === undefined,
+      status: row.status, phase: 'credential_refresh', reason: row.reason ?? 'http_error',
+    })
+    expect(await store.load('https://dsh.r2049.cn', identity.deviceId)).toEqual(initial)
+    if (row.terminal === undefined) {
+      expect((await api.authenticate(identity)).refreshToken).toBe('recovered-refresh-value')
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    } else expect(fetchMock).toHaveBeenCalledTimes(1)
+  } })), cleanupContract1)
+})

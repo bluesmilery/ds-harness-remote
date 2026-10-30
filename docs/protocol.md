@@ -296,6 +296,7 @@ deviceId 或相同 role，并为新角色签发独立 token pair、同步同账�
 ```
 
 Server 必须轮换 refresh token。完整多账号 Server 对未再次轮换、未撤销且未过期的后继 token 提供幂等恢复，不使用固定两分钟窗口；过时 token 被拒绝但不撤销当前有效凭据。恢复数据异常或数据库繁忙返回可重试 503。自部署 Server 的策略以其实现为准。Client 必须原子替换本地 token；不能在日志或 URL 中传 token。
+HTTP `401/403` 的空响应、非 JSON 响应或不符合协议的错误体应保留凭据并退避重试，不单凭状态码判定设备授权失效。完整 Server 握手时的授权快照竞争使用 WebSocket `1013`（稍后重试），Client 保留凭据重连，不消耗授权刷新恢复次数。
 成功响应必须使用 §8.1 的 token pair schema。请求和响应禁止包含未定义字段。
 
 ### 8.3 Remote Web 授权换取 Browser Launcher 凭证

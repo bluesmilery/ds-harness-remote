@@ -8,8 +8,7 @@ import { normalizeServerUrl } from './config.js'
 import { PLUGIN_VERSION } from './version.js'
 
 interface ErrorEnvelope {
-  error?: { code?: unknown; message?: unknown; retryable?: unknown }
-  detail?: unknown
+  error: { code: string; message: string; retryable: boolean }
 }
 
 interface WebLoginResponse {
@@ -487,11 +486,17 @@ export class HostServerApi {
       const body = await parseBody(response)
       signal.throwIfAborted()
       if (!response.ok) {
-        const envelope = (body ?? {}) as ErrorEnvelope
+        const envelope = isErrorEnvelope(body) ? body : undefined
+        // A gateway can challenge requests during startup. Only a protocol
+        // error envelope establishes that the device credentials were rejected.
+        if ((response.status === 401 || response.status === 403) && envelope === undefined) {
+          throw new ServerApiError('CONNECTION_FAILED', 'The Server returned an invalid authorization response.',
+            true, response.status, undefined, 'invalid_error_envelope')
+        }
         throw new ServerApiError(
-          responseErrorCode(response.status, envelope.error?.code),
-          typeof envelope.error?.message === 'string' ? envelope.error.message : 'The Server rejected the request.',
-          envelope.error?.retryable === true || response.status >= 500 || response.status === 429,
+          responseErrorCode(response.status, envelope?.error.code),
+          envelope?.error.message ?? 'The Server rejected the request.',
+          envelope?.error.retryable === true || response.status >= 500 || response.status === 429,
           response.status,
           undefined,
           'http_error',
@@ -546,7 +551,7 @@ export class ServerApiError extends Error {
     readonly retryable: boolean,
     readonly status?: number,
     readonly phase?: 'credential_refresh',
-    readonly reason?: 'http_error' | 'invalid_json' | 'timeout' | 'network_error',
+    readonly reason?: 'http_error' | 'invalid_json' | 'invalid_error_envelope' | 'timeout' | 'network_error',
   ) { super(message) }
 }
 
@@ -575,14 +580,24 @@ function validateWebLogin(value: unknown): WebLoginResponse {
   }
 }
 
+function isErrorEnvelope(value: unknown): value is ErrorEnvelope {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const error = (value as Record<string, unknown>).error
+  if (typeof error !== 'object' || error === null || Array.isArray(error)) return false
+  const fields = error as Record<string, unknown>
+  return typeof fields.code === 'string' && fields.code.length > 0
+    && typeof fields.message === 'string' && typeof fields.retryable === 'boolean'
+}
+
 async function parseBody(response: Response): Promise<unknown> {
   const text = await response.text()
   if (text.length === 0) return undefined
   try {
     return JSON.parse(text)
   } catch {
-    throw new ServerApiError(response.ok ? 'INVALID_MESSAGE' : responseErrorCode(response.status, undefined),
-      'The Server returned invalid JSON.', response.ok || response.status >= 500 || response.status === 429,
+    const unstructuredAuth = response.status === 401 || response.status === 403
+    throw new ServerApiError(unstructuredAuth ? 'CONNECTION_FAILED' : response.ok ? 'INVALID_MESSAGE' : responseErrorCode(response.status, undefined),
+      'The Server returned invalid JSON.', unstructuredAuth || response.ok || response.status >= 500 || response.status === 429,
       response.status, undefined, 'invalid_json')
   }
 }
