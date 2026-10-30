@@ -783,7 +783,7 @@ export function ConnectionScreen({ device, onBack, onConnected }: {
           <IconButton label={zhCN.common.back} icon={ArrowLeft} onPress={cancel} />
         </View>
       )}
-      <Screen>
+      <Screen fill>
         <View style={[styles.connectionHero, compactHero && styles.connectionHeroCompact]}>
           <ConnectionHero
             secured={currentIndex > connectionStages.indexOf('secure')}
@@ -858,6 +858,7 @@ export function ConnectionScreen({ device, onBack, onConnected }: {
             <Button label={zhCN.devices.retryConnection} variant="secondary" onPress={retry} />
           </View>
         )}
+        <View style={styles.connectionBottomSpace} />
       </Screen>
     </View>
   )
@@ -1145,8 +1146,9 @@ function createStyles(colors: ThemeColors) {
   compactSessionTitle: { ...type.smallStrong, color: colors.ink },
   compactSessionMeta: { ...type.caption, color: colors.muted, marginTop: 2 },
   connectionBack: { position: 'absolute', top: spacing.sm, left: spacing.sm, zIndex: 2 },
-  connectionHero: { alignItems: 'center', paddingTop: spacing.xxxl + spacing.xl, paddingBottom: spacing.xxl, gap: spacing.xl },
-  connectionHeroCompact: { paddingTop: spacing.lg, paddingBottom: spacing.md, gap: spacing.sm },
+  connectionHero: { flexGrow: 1, alignItems: 'center', justifyContent: 'flex-end', paddingTop: spacing.xl, paddingBottom: spacing.xxl + spacing.xs, gap: spacing.xl },
+  connectionBottomSpace: { flexGrow: 1.4 },
+  connectionHeroCompact: { paddingTop: spacing.xs, paddingBottom: spacing.md, gap: spacing.sm },
   connectionHeading: { alignSelf: 'stretch', alignItems: 'center', gap: spacing.xs },
   connectionStatusLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   connectionStatusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary },
