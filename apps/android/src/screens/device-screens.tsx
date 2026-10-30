@@ -28,6 +28,7 @@ import { strings as zhCN } from '../locales/i18n'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { resolveSessionDisplayTitle } from './session-title'
 import { DeviceRenameModal } from './device-rename-modal'
+import { ConnectionHero } from './connection-hero'
 
 export function DevicesScreen({ onDevice, onBack, onMore, onShortcut }: {
   onDevice: (device: RemoteDevice) => void
@@ -784,16 +785,30 @@ export function ConnectionScreen({ device, onBack, onConnected }: {
       )}
       <Screen>
         <View style={[styles.connectionHero, compactHero && styles.connectionHeroCompact]}>
-          <View style={styles.connectionDeviceIcon}><Laptop size={30} color={colors.primary} /></View>
+          <ConnectionHero
+            secured={currentIndex > connectionStages.indexOf('secure')}
+            ready={currentStage === 'ready'}
+            failed={failed}
+          />
           <View style={styles.connectionHeading}>
-            <Text accessibilityLiveRegion="polite" style={[styles.connectionStatus, failed && styles.connectionStatusFailed]}>
-              {failed ? zhCN.devices.connectionInterrupted : currentStage === 'ready' ? zhCN.devices.connectionReady : zhCN.devices.connecting}
-              {currentStage !== 'ready' && !failed && <AnimatedEllipsis />}
-            </Text>
-            <Text style={styles.connectionDeviceName} numberOfLines={2}>{device.name}</Text>
-            <Text style={styles.connectionVersions} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
-              {`${zhCN.devices.harnessShort} ${device.harnessVersion ?? zhCN.devices.unknownVersion} | ${zhCN.devices.pluginShort} ${device.clientVersion ?? zhCN.devices.unknownVersion}`}
-            </Text>
+            <View style={styles.connectionStatusLine}>
+              <View style={[styles.connectionStatusDot, currentStage === 'ready' && styles.connectionStatusDotReady, failed && styles.connectionStatusDotFailed]} />
+              <Text accessibilityLiveRegion="polite" style={[styles.connectionStatus, failed && styles.connectionStatusFailed]}>
+                {failed ? zhCN.devices.connectionInterrupted : currentStage === 'ready' ? zhCN.devices.connectionReady : zhCN.devices.connecting}
+                {currentStage !== 'ready' && !failed && <AnimatedEllipsis />}
+              </Text>
+            </View>
+            <Text style={styles.connectionDeviceName} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.7}>{device.name}</Text>
+            <View style={styles.connectionVersions}>
+              <View style={styles.versionItem}>
+                <Text style={styles.versionLabel}>{zhCN.devices.harnessShort}</Text>
+                <Text style={styles.versionValue} numberOfLines={1}>{device.harnessVersion ?? zhCN.devices.unknownVersion}</Text>
+              </View>
+              <View style={styles.versionItem}>
+                <Text style={styles.versionLabel}>{zhCN.devices.pluginShort}</Text>
+                <Text style={styles.versionValue} numberOfLines={1}>{device.clientVersion ?? zhCN.devices.unknownVersion}</Text>
+              </View>
+            </View>
           </View>
         </View>
 
@@ -1130,14 +1145,20 @@ function createStyles(colors: ThemeColors) {
   compactSessionTitle: { ...type.smallStrong, color: colors.ink },
   compactSessionMeta: { ...type.caption, color: colors.muted, marginTop: 2 },
   connectionBack: { position: 'absolute', top: spacing.sm, left: spacing.sm, zIndex: 2 },
-  connectionHero: { alignItems: 'center', paddingTop: spacing.xxxl, paddingBottom: spacing.xxl },
-  connectionHeroCompact: { paddingTop: spacing.lg, paddingBottom: spacing.md },
-  connectionDeviceIcon: { width: 68, height: 68, borderRadius: radius.lg, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.md },
-  connectionHeading: { alignSelf: 'stretch', alignItems: 'center', gap: spacing.xxs },
-  connectionStatus: { ...type.smallStrong, color: colors.muted, textAlign: 'center' },
+  connectionHero: { alignItems: 'center', paddingTop: spacing.xxxl, paddingBottom: spacing.xxl, gap: spacing.xl },
+  connectionHeroCompact: { paddingTop: spacing.lg, paddingBottom: spacing.md, gap: spacing.sm },
+  connectionHeading: { alignSelf: 'stretch', alignItems: 'center', gap: spacing.xs },
+  connectionStatusLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  connectionStatusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary },
+  connectionStatusDotReady: { backgroundColor: colors.success },
+  connectionStatusDotFailed: { backgroundColor: colors.danger },
+  connectionStatus: { ...type.small, color: colors.muted, textAlign: 'center' },
   connectionStatusFailed: { color: colors.danger },
-  connectionDeviceName: { ...type.title, color: colors.ink, textAlign: 'center' },
-  connectionVersions: { ...type.small, color: colors.muted, alignSelf: 'stretch', marginTop: spacing.xs, textAlign: 'center' },
+  connectionDeviceName: { ...type.title, color: colors.ink, textAlign: 'center', alignSelf: 'stretch', paddingHorizontal: spacing.xs },
+  connectionVersions: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', columnGap: spacing.md, marginTop: 2 },
+  versionItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  versionLabel: { ...type.small, color: colors.subtle },
+  versionValue: { ...type.small, color: colors.muted },
   connectionSteps: { marginTop: spacing.xs },
   connectionStep: { flexDirection: 'row', alignItems: 'stretch', gap: spacing.sm },
   stepMarker: { width: 30, alignItems: 'center' },
