@@ -47,6 +47,8 @@ import { loadHostSessionsDrawerGroups, saveHostSessionsDrawerGroup } from '../se
 import { clampDrawerTranslate, shouldConfirmSwipeLeftClose, shouldStartSwipeLeftToClose } from '../lib/gesture-swipe-rules'
 
 const SESSION_PAGE_SIZE = 3
+const DRAWER_WIDTH_RATIO = 0.8
+const DRAWER_MAX_WIDTH = 340
 
 /** 浮窗相对工具栏底部的间距 */
 const POPOVER_OFFSET = 4
@@ -351,7 +353,7 @@ export function HostSessionsDrawer({
 
   // 手势与抽屉动画
   const { width: screenWidth } = useWindowDimensions()
-  const drawerWidth = Math.min(Math.round(screenWidth * 0.85), 360)
+  const drawerWidth = Math.min(Math.round(screenWidth * DRAWER_WIDTH_RATIO), DRAWER_MAX_WIDTH)
   const translateX = useRef(new Animated.Value(-drawerWidth)).current
   const overlayOpacity = useRef(new Animated.Value(0)).current
   const dragStartX = useRef(0)
@@ -1023,7 +1025,7 @@ const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     overlayContainer: { flex: 1 },
     overlay: { flex: 1, backgroundColor: colors.scrim },
-    drawer: { flex: 1, width: '85%', maxWidth: 360, backgroundColor: colors.surface },
+    drawer: { flex: 1, width: `${DRAWER_WIDTH_RATIO * 100}%`, maxWidth: DRAWER_MAX_WIDTH, backgroundColor: colors.surface },
     inlineDrawer: { width: '100%', maxWidth: '100%', borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: colors.separator },
     container: { flex: 1 },
 
