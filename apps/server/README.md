@@ -4,6 +4,8 @@
 
 A single-account Remote relay with credentials configured through environment variables. Its Web UI includes a landing page, sign-in, and device status page. The Server is deployed separately from the Host plugin bundle.
 
+This remains a small self-hosted Server that we intend to maintain. The product shape of the full Server Web is still evolving, so this repository does not promise to open source the current or future full site.
+
 ## Self-hosted Web flow
 
 The `/` landing page links to `/app/login`; a successful sign-in continues to `/app/remote`. Point both Host and Client at the same Server URL and use the same account and password. Device credentials are persisted by the Server, while Web sessions use an HttpOnly cookie.
@@ -18,6 +20,12 @@ docker compose up -d --build
 ```
 
 Open <http://localhost:8080>. Device credentials persist in the `server-data` volume. Stop the service with `docker compose down`.
+
+Public image: `ghcr.io/liguobao/ds-harness-remote/server:latest`. Pull it directly when needed:
+
+```bash
+docker pull ghcr.io/liguobao/ds-harness-remote/server:latest
+```
 
 If an older image fails to resolve `@dsh-remote/protocol`, update the source and rebuild with `docker compose build --no-cache server && docker compose up -d server`. The image explicitly includes the compiled protocol package and checks the Server import graph during the build. Rebuilding preserves the data volume.
 
@@ -74,6 +82,16 @@ For public access, use an HTTPS reverse proxy and set `DSH_SERVER_PUBLIC_URL` to
 - Single-process operation with persistent data. Device credentials survive restarts; Web users sign in again. Changing the password requires devices to reauthorize.
 
 Tests: `pnpm --filter @dsh-remote/server test`. Cross-machine and long-running validation remain pending. UI sources: [web/UPSTREAM.md](web/UPSTREAM.md).
+
+## FAQ
+
+### Will this repository open source the current full Server Web?
+
+Not for now. The product shape of Server Web is still being worked out and will continue to evolve with that direction. This repository only promises to maintain the small self-hosted version described above.
+
+### Why are multi-account support, full membership, and Remote Web not included?
+
+These capabilities are not especially difficult to build, but users have different scenarios and trade-offs, so it is reasonable to adapt them to your own needs. Remote Web may be added to this Server after it becomes stable; there is no fixed schedule.
 
 ## Release Tag checks
 

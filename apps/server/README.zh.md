@@ -4,6 +4,8 @@
 
 单账号 Remote 中继，环境变量配置账号密码，Web 提供首页、登录和设备状态页。Server 不包含在 Host 插件 bundle 中，需要单独部署。
 
+当前版本定位为继续维护的最小自部署 Server。完整 Server Web 的产品形态仍在调整，暂不承诺在本仓库开源当前或未来的完整站点。
+
 ## 自部署页面
 
 首页地址是 `/`，点击“开始使用”进入登录页；登录成功后进入 `/app/remote` 设备列表。Host 和客户端都填写同一个 Server 地址，并使用相同的账号密码登录。设备凭据由 Server 保存，Web 登录会话使用 HttpOnly Cookie。
@@ -18,6 +20,12 @@ docker compose up -d --build
 ```
 
 打开 <http://localhost:8080>。设备凭据保存在 `server-data` 卷；停止使用 `docker compose down`。
+
+公开镜像地址：`ghcr.io/liguobao/ds-harness-remote/server:latest`。需要时可以直接拉取：
+
+```bash
+docker pull ghcr.io/liguobao/ds-harness-remote/server:latest
+```
 
 若旧镜像启动时无法解析 `@dsh-remote/protocol`，更新源码后执行 `docker compose build --no-cache server && docker compose up -d server`。镜像显式包含 protocol 编译产物，并在构建阶段校验 Server 的模块加载；重建会保留数据卷。
 
@@ -74,6 +82,16 @@ node --env-file=.env dist/main.js
 - 单进程运行；持久化保存 `data` 目录。重启后设备凭据保留，Web 需重新登录；修改密码后设备需重新授权。
 
 验证：`pnpm --filter @dsh-remote/server test`。真实跨机与长期连接仍待回归。UI 复用来源见 [web/UPSTREAM.md](web/UPSTREAM.md)。
+
+## 常见问题
+
+### 会开源当前的完整 Server Web 吗？
+
+暂不考虑。Server Web 的产品形态我还在调整，后续会按实际思路继续演进；当前仓库只承诺维护上面介绍的最小自部署版本。
+
+### 为什么没有多账号、完整 membership 和 Remote Web？
+
+这些能力本身实现门槛不高，但不同用户会有不同的场景和取舍，建议按自己的需求修改。Remote Web 稳定后，未来也可能加入当前 Server；目前没有固定时间表。
 
 ## 发布 Tag 检查
 
