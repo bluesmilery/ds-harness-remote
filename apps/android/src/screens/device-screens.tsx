@@ -835,23 +835,27 @@ export function ConnectionScreen({ device, onBack, onConnected }: {
                   >
                     {copy.title}
                   </Text>
-                  {active && !showRoute && <Text style={styles.stepBody}>{copy.body}</Text>}
-                  {stepFailed && connection.error !== undefined && <Text style={styles.stepBodyFailed}>{connection.error}</Text>}
-                  {showRoute && (
-                    <View style={styles.progressRoute}>
-                      {connectionProbeOrder.map((transport, probeIndex) => (
-                        <View key={`${transport}:${probeIndex}`} style={styles.progressRouteSegment}>
-                          {probeIndex > 0 && <ChevronRight size={12} color={colors.subtle} />}
-                          <Text style={[
-                            styles.progressRouteLabel,
-                            selectedProbe === transport && styles.progressRouteLabelActive,
-                          ]}>
-                            {probeTransportDiagnosticLabel(transport)}
-                          </Text>
-                        </View>
-                      ))}
-                    </View>
-                  )}
+                  <View style={styles.stepBodySlot}>
+                    {stepFailed && connection.error !== undefined
+                      ? <Text numberOfLines={1} ellipsizeMode="tail" style={styles.stepBodyFailed}>{connection.error}</Text>
+                      : showRoute
+                        ? <View style={styles.progressRoute}>
+                            {connectionProbeOrder.map((transport, probeIndex) => (
+                              <View key={`${transport}:${probeIndex}`} style={styles.progressRouteSegment}>
+                                {probeIndex > 0 && <ChevronRight size={12} color={colors.subtle} />}
+                                <Text numberOfLines={1} ellipsizeMode="tail" style={[
+                                  styles.progressRouteLabel,
+                                  selectedProbe === transport && styles.progressRouteLabelActive,
+                                ]}>
+                                  {probeTransportDiagnosticLabel(transport)}
+                                </Text>
+                              </View>
+                            ))}
+                          </View>
+                        : active
+                          ? <Text numberOfLines={1} ellipsizeMode="tail" style={styles.stepBody}>{copy.body}</Text>
+                          : <View style={styles.stepBodyPlaceholder} />}
+                  </View>
                 </View>
               </View>
             )
@@ -1167,15 +1171,17 @@ function createStyles(colors: ThemeColors) {
   stepMarkerDone: { borderColor: colors.primary, backgroundColor: colors.primary },
   stepMarkerActive: { borderColor: 'transparent' },
   stepMarkerFailed: { borderColor: colors.danger, backgroundColor: colors.danger },
-  stepCopy: { flex: 1, gap: 2 },
+  stepCopy: { flex: 1, gap: 2, minHeight: 44 },
   stepTitle: { ...type.small, lineHeight: 22, color: colors.subtle },
   stepTitleDone: { color: colors.muted },
   stepTitleCurrent: { ...type.smallStrong, lineHeight: 22, color: colors.ink },
   stepBody: { ...type.caption, color: colors.muted },
+  stepBodySlot: { minHeight: 20 },
+  stepBodyPlaceholder: { height: 16 },
   stepBodyFailed: { ...type.caption, color: colors.danger },
-  progressRoute: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginTop: 2, gap: 2 },
-  progressRouteSegment: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  progressRouteLabel: { ...type.caption, color: colors.muted, paddingHorizontal: 7, paddingVertical: 1, borderRadius: radius.pill, backgroundColor: colors.surfaceStrong, overflow: 'hidden' },
+  progressRoute: { flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', marginTop: 2, gap: 2 },
+  progressRouteSegment: { flexDirection: 'row', alignItems: 'center', gap: 2, flexShrink: 1 },
+  progressRouteLabel: { ...type.caption, color: colors.muted, paddingHorizontal: 7, paddingVertical: 1, borderRadius: radius.pill, backgroundColor: colors.surfaceStrong, overflow: 'hidden', flexShrink: 1 },
   progressRouteLabelActive: { color: colors.success, backgroundColor: colors.successSoft },
   connectionRetry: { marginTop: spacing.xs },
   deviceHero: { paddingVertical: spacing.xxl, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
