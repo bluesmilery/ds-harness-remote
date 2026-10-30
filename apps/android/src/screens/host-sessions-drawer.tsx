@@ -47,8 +47,8 @@ import { loadHostSessionsDrawerGroups, saveHostSessionsDrawerGroup } from '../se
 import { clampDrawerTranslate, shouldConfirmSwipeLeftClose, shouldStartSwipeLeftToClose } from '../lib/gesture-swipe-rules'
 
 const SESSION_PAGE_SIZE = 3
-const DRAWER_WIDTH_RATIO = 0.8
-const DRAWER_MAX_WIDTH = 340
+const DRAWER_WIDTH_RATIO = 0.85
+const DRAWER_MAX_WIDTH = 360
 
 /** 浮窗相对工具栏底部的间距 */
 const POPOVER_OFFSET = 4
@@ -1105,7 +1105,7 @@ const createStyles = (colors: ThemeColors) =>
       alignItems: 'center',
       justifyContent: 'space-between',
       paddingHorizontal: spacing.md,
-      height: 34,
+      height: 42,
       borderRadius: radius.sm,
     },
     workspaceRowLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flex: 1 },
@@ -1116,7 +1116,7 @@ const createStyles = (colors: ThemeColors) =>
       alignItems: 'center',
       paddingLeft: spacing.lg + spacing.xs,
       paddingRight: spacing.md,
-      height: 34,
+      height: 42,
       borderRadius: radius.sm,
       marginHorizontal: spacing.xs,
     },
@@ -1130,7 +1130,7 @@ const createStyles = (colors: ThemeColors) =>
     showMoreRow: {
       paddingLeft: spacing.lg + spacing.md,
       paddingVertical: spacing.xs,
-      height: 30,
+      height: 36,
       justifyContent: 'center',
     },
     showMoreText: { ...type.caption, color: colors.muted },
