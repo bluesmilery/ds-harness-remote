@@ -3,8 +3,11 @@ import {
   PROTOCOL_VERSION,
   acceptNegotiatedCapabilities,
   createControlFrame,
+  createRelayDataFrame,
   decodeControlFrame,
+  decodeRelayDataFrame,
   encodeControlFrame,
+  encodeRelayDataFrame,
   type ControlFrameByteLimits,
   type ConnectAcceptedPayload,
   type HelloAckPayload,
@@ -32,28 +35,6 @@ export interface RelayTransportOptions {
 }
 
 type RelayAssignment = Pick<ConnectAcceptedPayload, 'relayEndpoint' | 'relayTicket' | 'relayNodeId' | 'relayEpoch'>
-
-function relayDataFrame(type: string, payload: Record<string, unknown>): string {
-  return JSON.stringify({
-    v: PROTOCOL_VERSION,
-    id: typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random()}`,
-    type,
-    timestamp: Date.now(),
-    payload,
-  })
-}
-
-function parseRelayDataFrame(raw: string | ArrayBuffer | Blob): { type: string; payload: Record<string, unknown> } {
-  if (typeof raw !== 'string') throw new Error('Relay data frames must be text JSON')
-  const frame = JSON.parse(raw) as { v?: unknown; type?: unknown; payload?: unknown }
-  if (frame.v !== PROTOCOL_VERSION || typeof frame.type !== 'string'
-    || typeof frame.payload !== 'object' || frame.payload === null || Array.isArray(frame.payload)) {
-    throw new Error('Invalid Relay data frame')
-  }
-  return { type: frame.type, payload: frame.payload as Record<string, unknown> }
-}
 
 export class RelayTransport extends BaseTransport {
   private readonly handshakeHandlers = new Set<(step: number, data: Uint8Array) => void>()
@@ -125,7 +106,9 @@ export class RelayTransport extends BaseTransport {
       counter: this.relayCounter,
       ciphertext: toBase64Url(data),
     } satisfies RelayPayload
-    if (this.dataSocket !== undefined) this.dataSocket.send(relayDataFrame('relay', payload))
+    if (this.dataSocket !== undefined) {
+      this.dataSocket.send(encodeRelayDataFrame(createRelayDataFrame('relay', payload), this.controlFrameLimits))
+    }
     else this.sendControl('relay', payload)
     this.bytesSent += data.byteLength
     this.relayCounter += 1
@@ -268,16 +251,17 @@ export class RelayTransport extends BaseTransport {
         socket.close()
       }, this.options.handshakeTimeoutMs ?? 10_000)
       socket.onopen = () => {
-        socket.send(relayDataFrame('relay.attach', {
+        socket.send(encodeRelayDataFrame(createRelayDataFrame('relay.attach', {
           connectionId: this.connectionId,
           deviceId: this.options.deviceId,
           peerDeviceId: this.options.targetDeviceId,
           ticket: assignment.relayTicket,
-        }))
+        }), this.controlFrameLimits))
       }
       socket.onmessage = event => {
         try {
-          const data = parseRelayDataFrame(event.data)
+          if (typeof event.data !== 'string') throw new Error('Relay data frames must be text JSON')
+          const data = decodeRelayDataFrame(event.data, this.controlFrameLimits)
           if (data.type === 'relay.ready') {
             if (data.payload.connectionId !== this.connectionId
               || (assignment.relayEpoch !== undefined && data.payload.epoch !== assignment.relayEpoch)) {
@@ -317,7 +301,9 @@ export class RelayTransport extends BaseTransport {
       return
     }
     if (type === 'ping') {
-      if (this.dataSocket?.readyState === WebSocket.OPEN) this.dataSocket.send(relayDataFrame('pong', payload))
+      if (this.dataSocket?.readyState === WebSocket.OPEN) {
+        this.dataSocket.send(encodeRelayDataFrame(createRelayDataFrame('pong', payload), this.controlFrameLimits))
+      }
       return
     }
     if (type === 'relay') {

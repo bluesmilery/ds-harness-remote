@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { runScenarios } from '../../../scripts/test-scenarios.mjs'
-import { createControlFrame, createRpcRequest, decodeControlFrame, decodeMessage } from '../src/index.js'
+import {
+  MAX_RELAY_FRAME_BYTES,
+  createControlFrame,
+  createRelayDataFrame,
+  createRpcRequest,
+  decodeControlFrame,
+  decodeMessage,
+  decodeRelayDataFrame,
+  encodeRelayDataFrame,
+} from '../src/index.js'
 
 describe('wire JSON decoding', () => {
   it('rejects duplicate decoded keys in Control and Remote messages', async () => {
@@ -23,6 +32,27 @@ describe('wire JSON decoding', () => {
     await runScenarios([
       { name: 'Control bytes', run: () => expect(() => decodeControlFrame(invalid)).toThrow('Invalid wire JSON.') },
       { name: 'Remote bytes', run: () => expect(() => decodeMessage(invalid)).toThrow('Invalid wire JSON.') },
+    ])
+  })
+
+  it('bounds and strictly parses independent Relay data envelopes', async () => {
+    const relay = encodeRelayDataFrame(createRelayDataFrame('relay', {
+      connectionId: 'connection-1',
+      targetDeviceId: 'host-1',
+      counter: 0,
+      ciphertext: 'AQ',
+    }))
+    const duplicateEnvelopeId = relay.replace('"id":', '"id":"other","id":')
+    const duplicatePayload = relay.replace('"counter":0', '"counter":1,"counter":0')
+    const unknownEnvelopeField = relay.replace('"payload":', '"extra":true,"payload":')
+    const oversized = `{"v":1,"id":"x","type":"relay","timestamp":1,"payload":${' '.repeat(MAX_RELAY_FRAME_BYTES)}}`
+    await runScenarios([
+      { name: 'valid Relay data', run: () => expect(decodeRelayDataFrame(relay).type).toBe('relay') },
+      { name: 'duplicate envelope field', run: () => expect(() => decodeRelayDataFrame(duplicateEnvelopeId)).toThrow('Invalid Relay data frame.') },
+      { name: 'duplicate payload field', run: () => expect(() => decodeRelayDataFrame(duplicatePayload)).toThrow('Invalid Relay data frame.') },
+      { name: 'unknown envelope field', run: () => expect(() => decodeRelayDataFrame(unknownEnvelopeField)).toThrow('Invalid Relay data frame.') },
+      { name: 'oversized before JSON parse', run: () => expect(() => decodeRelayDataFrame(oversized)).toThrow('Relay frame exceeds its limit.') },
+      { name: 'negotiated limit', run: () => expect(() => decodeRelayDataFrame(relay, { maxRelayFrameBytes: relay.length - 1 })).toThrow('Relay frame exceeds its limit.') },
     ])
   })
 })

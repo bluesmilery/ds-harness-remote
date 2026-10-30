@@ -10,10 +10,13 @@ import {
   SecureMessageCodec,
   acceptNegotiatedCapabilities,
   createControlFrame,
+  createRelayDataFrame,
   decodeControlFrame,
+  decodeRelayDataFrame,
   decodeMessage,
   encodeControlFrame,
   encodeMessage,
+  encodeRelayDataFrame,
   type ControlFrameByteLimits,
   type ConnectIncomingPayload,
   type ControlErrorPayload,
@@ -56,33 +59,6 @@ interface WebSocketLike {
 }
 
 type RelayAssignment = Pick<ConnectIncomingPayload, 'relayEndpoint' | 'relayTicket' | 'relayNodeId' | 'relayEpoch'>
-
-function relayDataFrame(type: string, payload: Record<string, unknown>): string {
-  return JSON.stringify({
-    v: PROTOCOL_VERSION,
-    id: typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random()}`,
-    type,
-    timestamp: Date.now(),
-    payload,
-  })
-}
-
-function parseRelayDataFrame(raw: unknown): { type: string; payload: Record<string, unknown> } {
-  if (typeof raw !== 'string') throw new ControlConnectionError('INVALID_MESSAGE', 'Relay data frames must be text JSON.')
-  let value: unknown
-  try { value = JSON.parse(raw) } catch { throw new ControlConnectionError('INVALID_MESSAGE', 'Relay data frame is not valid JSON.') }
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new ControlConnectionError('INVALID_MESSAGE', 'Relay data frame must be an object.')
-  }
-  const frame = value as { v?: unknown; type?: unknown; payload?: unknown }
-  if (frame.v !== PROTOCOL_VERSION || typeof frame.type !== 'string'
-    || typeof frame.payload !== 'object' || frame.payload === null || Array.isArray(frame.payload)) {
-    throw new ControlConnectionError('INVALID_MESSAGE', 'Relay data frame is invalid.')
-  }
-  return { type: frame.type, payload: frame.payload as Record<string, unknown> }
-}
 
 export type WebSocketFactory = (url: string) => WebSocketLike
 
@@ -858,12 +834,12 @@ export class HostServerConnection {
       if (tunnel.dataSocket !== socket || tunnel.dataSocket.readyState !== 1 || !tunnel.dataReady) {
         throw new Error('Relay data transport is not ready')
       }
-      socket.send(relayDataFrame('relay', {
+      socket.send(encodeRelayDataFrame(createRelayDataFrame('relay', {
         connectionId: tunnel.connectionId,
         targetDeviceId: tunnel.peer.deviceId,
         counter,
         ciphertext: toBase64Url(ciphertext),
-      }))
+      }), this.controlFrameLimits))
       return
     }
     if (this.socket !== socket) throw new Error('Relay transport replaced')
@@ -894,19 +870,20 @@ export class HostServerConnection {
       }
       socket.onopen = () => {
         try {
-          socket.send(relayDataFrame('relay.attach', {
+          socket.send(encodeRelayDataFrame(createRelayDataFrame('relay.attach', {
             connectionId: tunnel.connectionId,
             deviceId: this.identity.deviceId,
             peerDeviceId: tunnel.peer.deviceId,
             ticket: assignment.relayTicket,
-          }))
+          }), this.controlFrameLimits))
         } catch (error) {
           finish(asError(error))
         }
       }
       socket.onmessage = event => {
         try {
-          const frame = parseRelayDataFrame(event.data)
+          if (typeof event.data !== 'string') throw new ControlConnectionError('INVALID_MESSAGE', 'Relay data frames must be text JSON.')
+          const frame = decodeRelayDataFrame(event.data, this.controlFrameLimits)
           if (frame.type === 'relay.ready') {
             if (frame.payload.connectionId !== tunnel.connectionId
               || (assignment.relayEpoch !== undefined && frame.payload.epoch !== assignment.relayEpoch)) {
@@ -944,7 +921,9 @@ export class HostServerConnection {
       return
     }
     if (type === 'ping') {
-      if (tunnel.dataSocket?.readyState === 1) tunnel.dataSocket.send(relayDataFrame('pong', payload))
+      if (tunnel.dataSocket?.readyState === 1) {
+        tunnel.dataSocket.send(encodeRelayDataFrame(createRelayDataFrame('pong', payload), this.controlFrameLimits))
+      }
       return
     }
     if (type !== 'relay') throw new ControlConnectionError('INVALID_MESSAGE', `Unexpected Relay data frame: ${type}`)
