@@ -28,7 +28,6 @@ import { strings as zhCN } from '../locales/i18n'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { resolveSessionDisplayTitle } from './session-title'
 import { DeviceRenameModal } from './device-rename-modal'
-import { ConnectionHero } from './connection-hero'
 
 export function DevicesScreen({ onDevice, onBack, onMore, onShortcut }: {
   onDevice: (device: RemoteDevice) => void
@@ -783,32 +782,18 @@ export function ConnectionScreen({ device, onBack, onConnected }: {
           <IconButton label={zhCN.common.back} icon={ArrowLeft} onPress={cancel} />
         </View>
       )}
-      <Screen fill>
+      <Screen>
         <View style={[styles.connectionHero, compactHero && styles.connectionHeroCompact]}>
-          <ConnectionHero
-            secured={currentIndex > connectionStages.indexOf('secure')}
-            ready={currentStage === 'ready'}
-            failed={failed}
-          />
+          <View style={styles.connectionDeviceIcon}><Laptop size={30} color={colors.primary} /></View>
           <View style={styles.connectionHeading}>
-            <View style={styles.connectionStatusLine}>
-              <View style={[styles.connectionStatusDot, currentStage === 'ready' && styles.connectionStatusDotReady, failed && styles.connectionStatusDotFailed]} />
-              <Text accessibilityLiveRegion="polite" style={[styles.connectionStatus, failed && styles.connectionStatusFailed]}>
-                {failed ? zhCN.devices.connectionInterrupted : currentStage === 'ready' ? zhCN.devices.connectionReady : zhCN.devices.connecting}
-                {currentStage !== 'ready' && !failed && <AnimatedEllipsis />}
-              </Text>
-            </View>
-            <Text style={styles.connectionDeviceName} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.7}>{device.name}</Text>
-            <View style={styles.connectionVersions}>
-              <View style={styles.versionItem}>
-                <Text style={styles.versionLabel}>{zhCN.devices.harnessShort}</Text>
-                <Text style={styles.versionValue} numberOfLines={1}>{device.harnessVersion ?? zhCN.devices.unknownVersion}</Text>
-              </View>
-              <View style={styles.versionItem}>
-                <Text style={styles.versionLabel}>{zhCN.devices.pluginShort}</Text>
-                <Text style={styles.versionValue} numberOfLines={1}>{device.clientVersion ?? zhCN.devices.unknownVersion}</Text>
-              </View>
-            </View>
+            <Text accessibilityLiveRegion="polite" style={[styles.connectionStatus, failed && styles.connectionStatusFailed]}>
+              {failed ? zhCN.devices.connectionInterrupted : currentStage === 'ready' ? zhCN.devices.connectionReady : zhCN.devices.connecting}
+              {currentStage !== 'ready' && !failed && <AnimatedEllipsis />}
+            </Text>
+            <Text style={styles.connectionDeviceName} numberOfLines={2}>{device.name}</Text>
+            <Text style={styles.connectionVersions} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+              {`${zhCN.devices.harnessShort} ${device.harnessVersion ?? zhCN.devices.unknownVersion} | ${zhCN.devices.pluginShort} ${device.clientVersion ?? zhCN.devices.unknownVersion}`}
+            </Text>
           </View>
         </View>
 
@@ -818,51 +803,46 @@ export function ConnectionScreen({ device, onBack, onConnected }: {
             const active = index === currentIndex && !failed
             const stepFailed = index === currentIndex && failed
             const copy = zhCN.devices.connectionSteps[stage]
-            const showRoute = stage === 'transport' && connectionProbeOrder.length > 0
             return (
               <View key={stage} style={styles.connectionStep}>
-                <View style={[styles.stepMarker, done && styles.stepMarkerDone, active && styles.stepMarkerActive, stepFailed && styles.stepMarkerFailed]}>
-                  {done
-                    ? <Check size={11} strokeWidth={3.2} color={colors.white} />
-                    : active
-                      ? <ActivityIndicator size={12} color={colors.primary} />
-                      : stepFailed ? <X size={11} strokeWidth={3} color={colors.white} /> : null}
+                <View style={styles.stepMarker}>
+                  <View style={[styles.stepCircle, done && styles.stepCircleComplete, active && styles.stepCircleActive, stepFailed && styles.stepCircleFailed]}>
+                    {done
+                      ? <Check size={18} color={colors.white} />
+                      : active
+                        ? <ActivityIndicator size="small" color={colors.primary} />
+                        : <View style={[styles.stepDot, stepFailed && styles.stepDotFailed]} />}
+                  </View>
+                  {index < connectionStages.length - 1 && <View style={[styles.stepConnector, done && styles.stepConnectorComplete]} />}
                 </View>
                 <View style={styles.stepCopy}>
-                  <Text
-                    accessibilityLiveRegion={active ? 'polite' : 'none'}
-                    style={[styles.stepTitle, done && styles.stepTitleDone, (active || stepFailed) && styles.stepTitleCurrent]}
-                  >
-                    {copy.title}
-                  </Text>
-                  <View style={styles.stepBodySlot}>
-                    {stepFailed && connection.error !== undefined
-                      ? <Text numberOfLines={1} ellipsizeMode="tail" style={styles.stepBodyFailed}>{connection.error}</Text>
-                      : showRoute
-                        ? <View style={styles.progressRoute}>
-                            {connectionProbeOrder.map((transport, probeIndex) => (
-                              <View key={`${transport}:${probeIndex}`} style={styles.progressRouteSegment}>
-                                {probeIndex > 0 && <ChevronRight size={12} color={colors.subtle} />}
-                                <Text numberOfLines={1} ellipsizeMode="tail" style={[
-                                  styles.progressRouteLabel,
-                                  selectedProbe === transport && styles.progressRouteLabelActive,
-                                ]}>
-                                  {probeTransportDiagnosticLabel(transport)}
-                                </Text>
-                              </View>
-                            ))}
-                          </View>
-                        : active
-                          ? <Text numberOfLines={1} ellipsizeMode="tail" style={styles.stepBody}>{copy.body}</Text>
-                          : <View style={styles.stepBodyPlaceholder} />}
-                  </View>
+                  <Text accessibilityLiveRegion={active ? 'polite' : 'none'} style={[styles.stepTitle, (active || done) && styles.stepTitleCurrent]}>{copy.title}</Text>
+                  {(stage !== 'transport' || connectionProbeOrder.length === 0) && <Text style={styles.stepBody}>{copy.body}</Text>}
+                  {stage === 'transport' && connectionProbeOrder.length > 0 && (
+                    <View style={styles.progressRoute}>
+                      {connectionProbeOrder.map((transport, probeIndex) => (
+                        <View key={`${transport}:${probeIndex}`} style={styles.progressRouteSegment}>
+                          {probeIndex > 0 && <ChevronRight size={12} color={colors.subtle} />}
+                          <Text style={[styles.progressRouteLabel, selectedProbe === transport && styles.progressRouteLabelActive]}>
+                            {probeTransportDiagnosticLabel(transport)}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                  {stepFailed && connection.error !== undefined && <Text style={styles.stepBodyFailed}>{connection.error}</Text>}
                 </View>
               </View>
             )
           })}
-          {failed && <View style={styles.connectionRetry}><Button label={zhCN.devices.retryConnection} variant="secondary" onPress={retry} /></View>}
         </View>
-        <View style={styles.connectionBottomSpace} />
+        {failed && (
+          <View style={styles.connectionError}>
+            <Text style={styles.connectionErrorTitle}>{zhCN.devices.connectionInterrupted}</Text>
+            <Text style={styles.connectionErrorBody}>{connection.error}</Text>
+            <Button label={zhCN.devices.retryConnection} variant="secondary" onPress={retry} />
+          </View>
+        )}
       </Screen>
     </View>
   )
@@ -1150,40 +1130,34 @@ function createStyles(colors: ThemeColors) {
   compactSessionTitle: { ...type.smallStrong, color: colors.ink },
   compactSessionMeta: { ...type.caption, color: colors.muted, marginTop: 2 },
   connectionBack: { position: 'absolute', top: spacing.sm, left: spacing.sm, zIndex: 2 },
-  connectionHero: { flexGrow: 1, alignItems: 'center', justifyContent: 'flex-end', paddingTop: spacing.xl, paddingBottom: spacing.xxl + spacing.xs, gap: spacing.xl },
-  connectionBottomSpace: { flexGrow: 1.4 },
-  connectionHeroCompact: { paddingTop: spacing.xs, paddingBottom: spacing.md, gap: spacing.sm },
-  connectionHeading: { alignSelf: 'stretch', alignItems: 'center', gap: spacing.xs },
-  connectionStatusLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  connectionStatusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary },
-  connectionStatusDotReady: { backgroundColor: colors.success },
-  connectionStatusDotFailed: { backgroundColor: colors.danger },
-  connectionStatus: { ...type.small, color: colors.muted, textAlign: 'center' },
+  connectionHero: { alignItems: 'center', paddingTop: spacing.xxxl, paddingBottom: spacing.xxl },
+  connectionHeroCompact: { paddingTop: spacing.lg, paddingBottom: spacing.md },
+  connectionDeviceIcon: { width: 68, height: 68, borderRadius: radius.lg, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.md },
+  connectionHeading: { alignSelf: 'stretch', alignItems: 'center', gap: spacing.xxs },
+  connectionStatus: { ...type.smallStrong, color: colors.muted, textAlign: 'center' },
   connectionStatusFailed: { color: colors.danger },
-  connectionDeviceName: { ...type.title, color: colors.ink, textAlign: 'center', alignSelf: 'stretch', paddingHorizontal: spacing.xs },
-  connectionVersions: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', columnGap: spacing.md, marginTop: 2 },
-  versionItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  versionLabel: { ...type.small, color: colors.subtle },
-  versionValue: { ...type.small, color: colors.muted },
-  connectionSteps: { alignSelf: 'center', width: '100%', maxWidth: 360, paddingHorizontal: spacing.md, gap: spacing.sm },
-  connectionStep: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
-  stepMarker: { width: 18, height: 18, marginTop: 2, borderRadius: 9, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
-  stepMarkerDone: { borderColor: colors.primary, backgroundColor: colors.primary },
-  stepMarkerActive: { borderColor: 'transparent' },
-  stepMarkerFailed: { borderColor: colors.danger, backgroundColor: colors.danger },
-  stepCopy: { flex: 1, gap: 2, minHeight: 44 },
-  stepTitle: { ...type.small, lineHeight: 22, color: colors.subtle },
-  stepTitleDone: { color: colors.muted },
-  stepTitleCurrent: { ...type.smallStrong, lineHeight: 22, color: colors.ink },
-  stepBody: { ...type.caption, color: colors.muted },
-  stepBodySlot: { minHeight: 20 },
-  stepBodyPlaceholder: { height: 16 },
+  connectionDeviceName: { ...type.title, color: colors.ink, textAlign: 'center' },
+  connectionVersions: { ...type.small, color: colors.muted, alignSelf: 'stretch', marginTop: spacing.xs, textAlign: 'center' },
+  connectionSteps: { marginTop: spacing.xs },
+  connectionStep: { flexDirection: 'row', alignItems: 'stretch', gap: spacing.sm },
+  stepMarker: { width: 30, alignItems: 'center' },
+  stepCircle: { width: 30, height: 30, borderRadius: radius.pill, backgroundColor: colors.surfaceStrong, alignItems: 'center', justifyContent: 'center' },
+  stepCircleActive: { backgroundColor: colors.primarySoft },
+  stepCircleComplete: { backgroundColor: colors.primary },
+  stepCircleFailed: { backgroundColor: colors.dangerSoft },
+  stepDot: { width: 7, height: 7, borderRadius: radius.pill, backgroundColor: colors.subtle },
+  stepDotFailed: { backgroundColor: colors.danger },
+  stepConnector: { width: 2, flex: 1, minHeight: spacing.xxl, marginVertical: spacing.xs, borderRadius: radius.pill, backgroundColor: colors.separator },
+  stepConnectorComplete: { backgroundColor: colors.primary },
+  stepCopy: { flex: 1, paddingBottom: spacing.xl },
+  stepTitle: { ...type.bodyStrong, color: colors.muted },
+  stepTitleCurrent: { color: colors.ink },
+  stepBody: { ...type.small, color: colors.muted, marginTop: 2 },
   stepBodyFailed: { ...type.caption, color: colors.danger },
-  progressRoute: { flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', marginTop: 2, gap: 2 },
-  progressRouteSegment: { flexDirection: 'row', alignItems: 'center', gap: 2, flexShrink: 1 },
-  progressRouteLabel: { ...type.caption, color: colors.muted, paddingHorizontal: 7, paddingVertical: 1, borderRadius: radius.pill, backgroundColor: colors.surfaceStrong, overflow: 'hidden', flexShrink: 1 },
-  progressRouteLabelActive: { color: colors.success, backgroundColor: colors.successSoft },
-  connectionRetry: { marginTop: spacing.xs },
+  progressRoute: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginTop: spacing.sm },
+  progressRouteSegment: { flexDirection: 'row', alignItems: 'center' },
+  progressRouteLabel: { ...type.small, color: colors.muted },
+  progressRouteLabelActive: { ...type.smallStrong, color: colors.success },
   deviceHero: { paddingVertical: spacing.xxl, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   deviceIcon: { width: 56, height: 56, borderRadius: radius.lg, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
   deviceHeroCopy: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.xxs },
